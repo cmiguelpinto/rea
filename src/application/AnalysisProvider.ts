@@ -5,6 +5,7 @@ import type { NativeToolName } from "../contracts/native/nativeToolContracts.js"
 import type { ArtifactAnalysisOperation } from "../contracts/artifactToolContracts.js";
 import type { ManagedToolName } from "../contracts/managed/managedToolContracts.js";
 import type { AnalysisError } from "../domain/analysisErrorBase.js";
+import { AnalysisCapabilityUnavailableError } from "../domain/analysisErrorCore.js";
 import type { AnalysisProfileCommitment } from "../domain/analysisProfile.js";
 import type { JsonValue } from "../domain/jsonValue.js";
 import type { Result } from "../domain/result.js";
@@ -209,6 +210,31 @@ export type ProviderAvailability =
       readonly reason: string;
       readonly diagnostics: Readonly<Record<string, JsonValue>>;
     };
+
+/** A host tool configuration failure observed before any target work. */
+export interface ProviderConfigurationFailure extends Error {
+  readonly diagnostics: Readonly<Record<string, JsonValue>>;
+}
+
+/**
+ * Refuse an operation because the host tool is misconfigured. The reason,
+ * not the generic target advice, tells the caller what to change.
+ */
+export const providerConfigurationRefusal = (
+  providerId: string,
+  operation: string,
+  failure: ProviderConfigurationFailure,
+): AnalysisCapabilityUnavailableError => {
+  const remediation = failure.diagnostics.remediation;
+  const reason =
+    typeof remediation === "string"
+      ? `${failure.message}. ${remediation}.`
+      : `${failure.message}.`;
+  return new AnalysisCapabilityUnavailableError(providerId, operation, reason, {
+    cause: failure,
+    userMessage: reason,
+  });
+};
 
 /** Provider-owned target support observation before profile resolution. */
 export type ProviderTargetSupport =

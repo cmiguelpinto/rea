@@ -22,6 +22,7 @@ import type {
 } from "../application/AnalysisProvider.js";
 import {
   createAnalysisExecution,
+  providerConfigurationRefusal,
   type AnalysisExecution,
 } from "../application/AnalysisProvider.js";
 import type { ApktoolRequest } from "../domain/apktool/apktoolResourceAnalysis.js";
@@ -409,21 +410,14 @@ export class ApktoolProvider {
       );
     } catch (cause) {
       if (cause instanceof AnalysisCancelledError) return err(cause);
-      if (cause instanceof ApktoolConfigurationFailure) {
-        // A host configuration refusal; the target is not the problem.
-        const reason =
-          typeof cause.diagnostics.remediation === "string"
-            ? `${cause.message}. ${cause.diagnostics.remediation}.`
-            : `${cause.message}.`;
+      if (cause instanceof ApktoolConfigurationFailure)
         return err(
-          new AnalysisCapabilityUnavailableError(
+          providerConfigurationRefusal(
             APKTOOL_PROVIDER_IDENTITY.id,
             request.operation,
-            reason,
-            { cause, userMessage: reason },
+            cause,
           ),
         );
-      }
       return err(
         new AnalysisProtocolError(
           `apktool version probe failed for ${request.operation}`,
