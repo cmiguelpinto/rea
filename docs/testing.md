@@ -376,6 +376,23 @@ MCP session's documents or procedures. Lease boundary tests also preserve
 unresponsive or malformed live endpoints while allowing confirmed stale
 sockets to recover.
 
+`verify:setup:linux` exercises installation on a clean supported Linux runner as
+root. Use a disposable VM: this lane installs Hopper and its Linux runtime
+dependencies through the system package manager. Set `REA_VERIFY_SERVER_COMMAND`
+to the CLI entrypoint being verified. The command builds and checks source-owned
+ELF fixtures before testing the read-only Hopper setup plan, approved
+installation, scoped doctor, real CLI/MCP analysis, rejection of a modified
+launcher, idempotent setup without requesting a reinstall, and owned child
+cleanup. Before installation and after teardown, a clean-runner process scan
+also rejects surviving Hopper demo helpers or Xvfb groups, including orphans
+whose launcher exited. This scan observes processes without signaling them.
+Hopper detection compares executable file identity through `/proc`, covering
+alternate or configured launcher paths even after an invoked symlink is removed.
+The dedicated runner must have no unrelated Hopper/Xvfb sessions. It requires
+the repository's pinned development toolchain and an
+existing host C compiler, `file`, `nm`, and `strings`. Use `verify:hopper:linux`
+instead when Hopper is already installed.
+
 `verify:hopper:fat` is a separate macOS lane requiring installed Hopper and the
 existing Xcode clang/lipo toolchain. It compiles arm64/x86-64 thin executables and
 one- and two-slice FAT32 containers, verifies exact/interior address mappings
