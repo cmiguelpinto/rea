@@ -65,6 +65,7 @@ const registrationSchema = z
     startup_timeout_sec: z.number().positive().optional(),
     type: z.string().optional(),
     transport: z.string().optional(),
+    serverName: z.string().optional(),
     tools: z.array(z.string()).optional(),
     disabled: z.boolean().optional(),
     enabled: z.boolean().optional(),
@@ -211,6 +212,13 @@ const registrationAligned = (
   )
     return false;
   if (client.format === "vscode" && registration.type !== "stdio") return false;
+  // A Harness registration only connects as the rea stdio server; another
+  // server name or transport leaves the session without REA tools.
+  if (
+    client.format === "dsh" &&
+    (registration.serverName !== "rea" || registration.transport !== "stdio")
+  )
+    return false;
   // OMP and Pi infer stdio for a command entry without an explicit type.
   if (
     (client.format === "omp" || client.format === "pi") &&
