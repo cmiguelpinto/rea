@@ -34,27 +34,31 @@ export const registerWebNetworkCaptureCommands = (
         ),
     }),
     run: ({ args, options }) =>
-      withCommandCancellation((signal) =>
-        logCliCommand(
-          logger,
-          CLI_COMMANDS.inspectWebNetworkCapture,
-          async () => {
-            const result = await service.inspect(
-              {
-                capture_path: args.capturePath,
-                format: args.format,
-                sensitive_values: options.sensitiveValue,
-                ...(options.record === undefined
-                  ? {}
-                  : { record_ordinals: options.record }),
-              },
-              { signal },
-            );
-            return result.ok
-              ? result.value
-              : projectAnalysisError(result.error);
-          },
-        ),
-      ),
+      withCommandCancellation(async (signal) => {
+        try {
+          return await logCliCommand(
+            logger,
+            CLI_COMMANDS.inspectWebNetworkCapture,
+            async () => {
+              const result = await service.inspect(
+                {
+                  capture_path: args.capturePath,
+                  format: args.format,
+                  sensitive_values: options.sensitiveValue,
+                  ...(options.record === undefined
+                    ? {}
+                    : { record_ordinals: options.record }),
+                },
+                { signal },
+              );
+              return result.ok
+                ? result.value
+                : projectAnalysisError(result.error);
+            },
+          );
+        } finally {
+          await service.close();
+        }
+      }),
   });
 };

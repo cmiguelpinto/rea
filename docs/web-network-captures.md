@@ -122,9 +122,15 @@ HAR runs in an owned
 192 MiB Node old-generation heap with one V8 worker. Native decoding applies
 Linux limits of 768 MiB address space, 30 seconds CPU and 96 MiB file output;
 both commands have a 30-second wall deadline and independently supervised
-process cleanup. Owned decoder diagnostics retain at most 1 MiB across stdout
-and stderr; the collector drops overflow as it arrives, reports the limit
-failure and verifies cleanup. Heap limits alone do not establish aggregate RSS limits.
+process cleanup. The HAR decoder is REA's own helper and creates no descendant
+processes, so Linux and macOS stop it through its child handle without the native
+process-group ownership helper (which macOS compiles with Apple's Swift
+compiler). Windows starts it in an owned Job Object with kill-on-owner-close.
+Under Bun, only that Job Object enforces the decoder's memory limit, as described
+below. External mitmdump keeps token-verified process-group cleanup. Owned
+decoder diagnostics retain at most 1 MiB across stdout and stderr; the collector
+drops overflow as it arrives, reports the limit failure and verifies cleanup.
+Heap limits alone do not establish aggregate RSS limits.
 When REA runs on Bun, the HAR decoder runs on Bun, which ignores these V8 heap
 flags; its limitations and resource failures then omit the heap sizes. On
 Windows, the decoder's owned Job Object instead limits its committed memory to
@@ -142,9 +148,14 @@ not establish complete-capture coverage. Repeating the same workload or
 running provider health diagnostics does not resolve the heap constraint.
 
 Stable regular-file reads reject symlinks, replacement and concurrent changes.
-Private snapshots, declarations and tool configuration are removed before the
-result returns. Cleanup uncertainty retains the selected capture, resource and
-original failure information. The original capture is never changed.
+Successful inspection removes private snapshots, declarations and tool
+configuration before returning. If process cleanup fails, REA retains the
+process supervisor and private directory together; it removes the directory
+only after a retry confirms the process stopped. Failed directory cleanup also
+retains its owner. The next inspection retries pending cleanup before decoding,
+and CLI/MCP shutdown retries retained owners. Cleanup uncertainty retains the
+selected capture, resource and original failure information. The original
+capture is never changed.
 
 ## Excluded coordinates and read failures
 

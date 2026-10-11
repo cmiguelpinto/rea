@@ -25,6 +25,11 @@ const OPERATION = "inspect_web_network_capture";
 export class WebNetworkCaptureService {
   constructor(readonly port: WebNetworkCapturePort) {}
 
+  /** Forward shutdown to ports that retain owned resources. */
+  close(): Promise<void> {
+    return this.port.close?.() ?? Promise.resolve();
+  }
+
   /** Return selected complete records inline, without inventing live browser attribution. */
   async inspect(
     rawInput: unknown,

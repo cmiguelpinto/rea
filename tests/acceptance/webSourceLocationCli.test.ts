@@ -36,7 +36,7 @@ cliTest(
       environment: {
         REA_LOG_LEVEL: "silent",
         REA_BROWSER_EXECUTABLE: "relative-unconfigured-browser",
-        CLANG_MODULE_CACHE_PATH: map,
+        DEVELOPER_DIR: join(root, "unavailable-developer-dir"),
       },
       timeoutMs: 45000,
     });
@@ -62,7 +62,7 @@ cliTest(
       env: {
         ...getDefaultEnvironment(),
         REA_LOG_LEVEL: "silent",
-        CLANG_MODULE_CACHE_PATH: map,
+        DEVELOPER_DIR: join(root, "unavailable-developer-dir"),
       },
       stderr: "pipe",
     });
@@ -109,6 +109,4 @@ cliTest(
       details: { issues: [{ path: ["generated_position"] }] },
     });
   },
-  // Allow cold CLI and MCP ownership preparation across the full parity sequence.
-  180_000,
 );

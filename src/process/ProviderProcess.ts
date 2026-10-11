@@ -9,6 +9,7 @@ import type {
   ProcessCleanupFailure,
   ProcessCleanupResult,
 } from "./ProcessOwnership.js";
+import { cleanupOwnedProcessGroup } from "./ProcessOwnership.js";
 import { prepareProcessOwnershipInspection } from "./ProcessOwnershipObservation.js";
 
 const DEFAULT_TERMINATION_GRACE_MS = 250;
@@ -220,6 +221,56 @@ export const spawnOwnedProviderProcess = async (
       : { expectedCommand: options.expectedCommand ?? options.command }),
   };
   return { process: child, ownership };
+};
+
+/** Spawn a non-Windows REA helper that creates no descendant processes. */
+export const spawnOwnedChildProcess = async (
+  options: OwnedProviderProcessSpawnOptions,
+): Promise<ChildProcess> => {
+  options.signal?.throwIfAborted();
+  if ((options.platform ?? process.platform) === "win32")
+    throw new Error(
+      "Owned Windows helpers require the Windows Job Object launcher.",
+    );
+  if (options.memoryLimitBytes !== undefined)
+    throw new Error(
+      "Owned process memory limits require the Windows Job Object launcher; a direct child cannot enforce one.",
+    );
+  const child = spawn(options.command, [...options.arguments], {
+    shell: false,
+    windowsHide: true,
+    stdio: [options.stdin ?? "ignore", "pipe", "pipe"],
+    env: {
+      ...(options.hostEnvironment ?? process.env),
+      ...options.env,
+      REA_PROCESS_RUN_ID: options.runId,
+    },
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+  });
+  await waitForSpawn(child);
+  if (child.pid === undefined) throw new Error("Owned child has no process ID");
+  return child;
+};
+
+/** Launch an internal helper with Windows kill-on-owner-close containment. */
+export const spawnOwnedInternalProcess = async (
+  options: OwnedProviderProcessSpawnOptions,
+): Promise<Extract<ProviderProcessLaunch, { ownsProcessLifetime: true }>> => {
+  if (
+    (options.platform ?? process.platform) !== "win32" &&
+    options.memoryLimitBytes === undefined
+  )
+    return {
+      process: await spawnOwnedChildProcess(options),
+      ownsProcessLifetime: true,
+    };
+  const launched = await spawnOwnedProviderProcess(options);
+  return {
+    ...launched,
+    ownsProcessLifetime: true,
+    cleanup:
+      launched.cleanup ?? (() => cleanupOwnedProcessGroup(launched.ownership)),
+  };
 };
 
 /**

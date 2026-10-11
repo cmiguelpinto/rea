@@ -1,13 +1,16 @@
 import { parseMcpToolError } from "../../fixtures/mcpToolError.js";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import type { CallToolResult } from "@modelcontextprotocol/server";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 
+import { WebNetworkCaptureService } from "../../../src/application/WebNetworkCaptureService.js";
+import { AnalysisCancelledError } from "../../../src/domain/analysisErrorCore.js";
 import type { AnalysisOperationPort } from "../../../src/application/AnalysisProvider.js";
 import { HopperRemoteError } from "../../../src/domain/hopperErrors.js";
 import { err } from "../../../src/domain/result.js";
 import { observed as ok } from "../../fixtures/analysisExecution.js";
 import { createServer } from "../../../src/server/createServer.js";
+import * as webNetworkCaptures from "../../../src/composition/webNetworkCaptures.js";
 
 const resources: Array<{ close(): Promise<void> }> = [];
 
@@ -134,4 +137,45 @@ it("preserves distinct results across concurrent tool calls", async () => {
       normalized_result: payloads.get(names[index] ?? ""),
     });
   });
+});
+
+it("closes the capture port used by MCP and retries failed cleanup", async () => {
+  let inspected = false;
+  let attempts = 0;
+  const webNetworkCapture = new WebNetworkCaptureService({
+    inspect: async () => {
+      inspected = true;
+      return err(new AnalysisCancelledError("inspect_web_network_capture"));
+    },
+    close: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("capture directory remains owned");
+    },
+  });
+  const createService = vi
+    .spyOn(webNetworkCaptures, "createWebNetworkCaptureService")
+    .mockReturnValue(webNetworkCapture);
+  onTestFinished(() => createService.mockRestore());
+  const server = createServer({
+    kind: "fixed",
+    analysis: { execute: async () => ok([]) },
+  });
+  expect(createService).toHaveBeenCalledTimes(1);
+  const client = new Client({ name: "capture-lifecycle-test", version: "1" });
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  resources.push(client, server);
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const result = await client.callTool({
+    name: "inspect_web_network_capture",
+    arguments: { capture_path: "/capture.har", format: "har" },
+  });
+  expect(result.isError).toBe(true);
+  expect(inspected).toBe(true);
+  await expect(server.close()).rejects.toThrow("REA provider cleanup failed");
+  expect(attempts).toBe(1);
+  await server.close();
+  expect(attempts).toBe(2);
 });

@@ -32,7 +32,38 @@ export type ArtifactResourceOwner =
       readonly kind: "output-tree";
       readonly resource: string;
       readonly tree: SafeOutputTree;
+    }
+  | {
+      readonly kind: "historical-capture-runtime";
+      readonly resource: string;
+      close(): Promise<void>;
     };
+
+export interface ArtifactResourceCleanupFailureEntry {
+  readonly owner: ArtifactResourceOwner;
+  readonly cause: unknown;
+}
+
+/** Failed drain that keeps each resource owner paired with its cleanup failure. */
+export class ArtifactResourceCleanupFailure extends ArtifactReaderFailure {
+  constructor(
+    readonly failures: readonly ArtifactResourceCleanupFailureEntry[],
+    message: string,
+    options: {
+      readonly resources: readonly string[];
+      readonly reason: string;
+    },
+  ) {
+    super("unavailable", message, {
+      cause: new AggregateError(
+        failures.map(({ cause }) => cause),
+        "One or more artifact resources remain owned",
+      ),
+      cleanup: options,
+    });
+    this.name = "ArtifactResourceCleanupFailure";
+  }
+}
 
 export type ArtifactCleanupAttempt =
   | { readonly kind: "released" }
@@ -73,6 +104,11 @@ export class ArtifactResourceScope {
     }
   }
 
+  /** Retain an owner whose acquisition boundary already reported failed cleanup. */
+  retain(owner: ArtifactResourceOwner): void {
+    this.#pending.add(owner);
+  }
+
   /** Attempt cleanup now and retain the same owner if it fails. */
   async release(owner: ArtifactResourceOwner): Promise<ArtifactCleanupAttempt> {
     try {
@@ -80,7 +116,7 @@ export class ArtifactResourceScope {
       this.#pending.delete(owner);
       return { kind: "released" };
     } catch (cause: unknown) {
-      this.#pending.add(owner);
+      this.retain(owner);
       return { kind: "failed", cause };
     }
   }
@@ -102,10 +138,7 @@ export class ArtifactResourceScope {
 
   async #drainAndRetry(): Promise<void> {
     while (this.#active.size > 0) await Promise.allSettled(this.#active);
-    const failures: {
-      readonly owner: ArtifactResourceOwner;
-      readonly cause: unknown;
-    }[] = [];
+    const failures: ArtifactResourceCleanupFailureEntry[] = [];
     for (const owner of this.#pending) {
       try {
         await cleanup(owner);
@@ -121,18 +154,12 @@ export class ArtifactResourceScope {
     const resources = [
       ...new Set(observations.flatMap(({ resources }) => resources)),
     ];
-    throw new ArtifactReaderFailure(
-      "unavailable",
+    throw new ArtifactResourceCleanupFailure(
+      failures,
       `Artifact cleanup remains incomplete: ${resources.join(", ")}`,
       {
-        cause: new AggregateError(
-          failures.map(({ cause }) => cause),
-          "One or more artifact resources remain owned",
-        ),
-        cleanup: {
-          reason: observations.map(({ reason }) => reason).join("; "),
-          resources,
-        },
+        reason: observations.map(({ reason }) => reason).join("; "),
+        resources,
       },
     );
   }
@@ -152,5 +179,8 @@ const cleanup = async (owner: ArtifactResourceOwner): Promise<void> => {
       return;
     case "output-tree":
       await owner.tree.rollback();
+      return;
+    case "historical-capture-runtime":
+      await owner.close();
   }
 };

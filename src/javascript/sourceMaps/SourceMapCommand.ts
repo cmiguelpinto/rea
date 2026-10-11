@@ -22,14 +22,12 @@ import {
 } from "../../process/PrivateRuntimeRoot.js";
 import { ProviderStartupDeadline } from "../../process/ProviderDeadline.js";
 import { javaScriptWorkerMemoryLimitBytes } from "../../process/JavaScriptWorkerMemoryLimit.js";
-import { cleanupOwnedProcessGroup } from "../../process/ProcessOwnership.js";
 import {
   ProviderProcessSupervisor,
-  spawnOwnedProviderProcess,
+  spawnOwnedInternalProcess,
   type OwnedProviderProcessSpawnOptions,
-  type SpawnedOwnedProviderProcess,
+  type ProviderProcessLaunch,
 } from "../../process/ProviderProcess.js";
-import { prepareProcessOwnershipInspection } from "../../process/ProcessOwnershipObservation.js";
 
 const OPERATION = "trace_web_source_location";
 const PROVIDER = "source-map-decoder";
@@ -39,7 +37,7 @@ export const SOURCE_MAP_CODEC_MEMORY_LIMIT_BYTES =
 /** Launcher seam retains the actual codec protocol and ownership supervisor. */
 export type SourceMapCodecLauncher = (
   options: OwnedProviderProcessSpawnOptions,
-) => Promise<SpawnedOwnedProviderProcess>;
+) => Promise<Extract<ProviderProcessLaunch, { ownsProcessLifetime: true }>>;
 /** Runtime implementations establish privacy before returning an owned directory. */
 export interface SourceMapCodecRuntime {
   readonly path: string;
@@ -50,8 +48,6 @@ export interface SourceMapDecoderDependencies {
   readonly launcher?: SourceMapCodecLauncher;
   readonly createRuntime?: () => Promise<SourceMapCodecRuntime>;
   readonly environment?: Readonly<NodeJS.ProcessEnv>;
-  /** Prepare host ownership inspection outside the codec execution deadline. */
-  readonly prepareOwnership?: (signal?: AbortSignal) => Promise<void>;
 }
 
 export interface SourceMapCleanupOwner {
@@ -77,24 +73,6 @@ export const runSourceMapCommand = async (
   options: ExecutionOptions | undefined,
   dependencies: SourceMapDecoderDependencies,
 ): Promise<Result<string, AnalysisError>> => {
-  try {
-    await (dependencies.prepareOwnership ?? prepareProcessOwnershipInspection)(
-      options?.signal,
-    );
-  } catch (cause: unknown) {
-    return err(
-      options?.signal?.aborted === true
-        ? new AnalysisCancelledError(OPERATION)
-        : new ProviderAdapterError(PROVIDER, OPERATION, {
-            cause,
-            diagnostics: {
-              map_path: path,
-              error_message: message(cause),
-              phase: "process_ownership_preparation",
-            },
-          }),
-    );
-  }
   const deadline = new ProviderStartupDeadline(
     WEB_SOURCE_MAP_LIMITS.decodeTimeoutMs,
     options?.signal,
@@ -148,7 +126,7 @@ class OwnedCodec implements SourceMapCleanupOwner {
     };
     delete environment.NODE_OPTIONS;
     const spawned = await (
-      this.dependencies.launcher ?? spawnOwnedProviderProcess
+      this.dependencies.launcher ?? spawnOwnedInternalProcess
     )({
       command: process.execPath,
       arguments: [
@@ -168,28 +146,20 @@ class OwnedCodec implements SourceMapCleanupOwner {
         : { memoryLimitBytes: SOURCE_MAP_CODEC_MEMORY_LIMIT_BYTES }),
       signal: this.deadline.signal,
     });
-    this.#supervisor = new ProviderProcessSupervisor(
-      {
-        ...spawned,
-        ownsProcessLifetime: true,
-        cleanup:
-          spawned.cleanup ??
-          (() => cleanupOwnedProcessGroup(spawned.ownership)),
+    this.#supervisor = new ProviderProcessSupervisor(spawned, {
+      maxDiagnosticBytes: WEB_SOURCE_MAP_LIMITS.outputBytes + 1024 * 1024,
+      onDiagnostic: (event) => {
+        if (event.type === "error") this.#processError = event.message;
+        if (
+          event.type === "output" &&
+          event.totalBytes >
+            (event.stream === "stdout"
+              ? WEB_SOURCE_MAP_LIMITS.outputBytes
+              : 1024 * 1024)
+        )
+          this.#oversized = true;
       },
-      {
-        onDiagnostic: (event) => {
-          if (event.type === "error") this.#processError = event.message;
-          if (
-            event.type === "output" &&
-            event.totalBytes >
-              (event.stream === "stdout"
-                ? WEB_SOURCE_MAP_LIMITS.outputBytes
-                : 1024 * 1024)
-          )
-            this.#oversized = true;
-        },
-      },
-    );
+    });
   }
 
   async collect(): Promise<string> {

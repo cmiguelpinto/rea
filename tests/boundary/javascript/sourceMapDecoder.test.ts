@@ -1,13 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { access } from "node:fs/promises";
-import { expect, it, vi } from "vitest";
+import { expect, it, onTestFinished, vi } from "vitest";
 import { SourceMapDecoder } from "../../../src/javascript/sourceMaps/SourceMapDecoder.js";
 import {
   SOURCE_MAP_CODEC_MEMORY_LIMIT_BYTES,
   type SourceMapDecoderDependencies,
 } from "../../../src/javascript/sourceMaps/SourceMapCommand.js";
 import { PrivateRuntimeRoot } from "../../../src/process/PrivateRuntimeRoot.js";
-import { spawnOwnedProviderProcess } from "../../../src/process/ProviderProcess.js";
+import { spawnOwnedInternalProcess } from "../../../src/process/ProviderProcess.js";
+import * as ownershipObservation from "../../../src/process/ProcessOwnershipObservation.js";
 import { waitForProviderProcessReady } from "../../fixtures/providerProcess.js";
 import {
   webSourceLocationArgs,
@@ -20,7 +21,7 @@ const realDecoder = (dependencies: SourceMapDecoderDependencies = {}) =>
     launcher:
       dependencies.launcher ??
       ((options) =>
-        spawnOwnedProviderProcess({
+        spawnOwnedInternalProcess({
           ...options,
           arguments: options.arguments.map((argument) =>
             argument.endsWith("/SourceMapCodecProcess.js") ||
@@ -44,32 +45,6 @@ const input = {
   position: webSourceLocationArgs.generated_position,
 };
 
-it("starts the codec deadline after cold ownership preparation", async () => {
-  vi.useFakeTimers();
-  try {
-    let prepared = false;
-    const responsePromise = realDecoder({
-      prepareOwnership: async (signal) => {
-        await vi.advanceTimersByTimeAsync(20_001);
-        expect(signal?.aborted).not.toBe(true);
-        prepared = true;
-      },
-      launcher: (options) => {
-        expect(prepared).toBe(true);
-        expect(options.signal?.aborted).not.toBe(true);
-        return Promise.reject(new Error("observed launch after preparation"));
-      },
-    }).trace(input);
-    const response = await responsePromise;
-    if (response.ok) throw new Error("expected launch failure");
-    expect(response.error).toMatchObject({
-      diagnostics: { error_message: "observed launch after preparation" },
-    });
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
 it("runs the real pinned codec with an independent heap and removes its private request directory", async () => {
   let path: string | undefined;
   const environment = {
@@ -84,7 +59,23 @@ it("runs the real pinned codec with an independent heap and removes its private 
       return root;
     },
   });
+  const preparation = vi.spyOn(
+    ownershipObservation,
+    "prepareProcessOwnershipInspection",
+  );
+  onTestFinished(() => preparation.mockRestore());
+  if (
+    SOURCE_MAP_CODEC_MEMORY_LIMIT_BYTES === null &&
+    process.platform !== "win32"
+  )
+    preparation.mockRejectedValue(
+      new Error("native ownership helper compilation failed"),
+    );
   const response = await decoder.trace(input);
+  if (SOURCE_MAP_CODEC_MEMORY_LIMIT_BYTES === null)
+    expect(preparation).toHaveBeenCalledTimes(
+      process.platform === "win32" ? 1 : 0,
+    );
   if (!response.ok) throw response.error;
   expect(response.value).toMatchObject({
     engine: { id: "jridgewell-trace-mapping", version: "0.3.31" },
@@ -169,7 +160,7 @@ it("cancels a real owned process and removes the runtime request", async () => {
       return root;
     },
     launcher: async (options) => {
-      const child = await spawnOwnedProviderProcess({
+      const child = await spawnOwnedInternalProcess({
         ...options,
         arguments: [
           "-e",
@@ -189,7 +180,7 @@ it("cancels a real owned process and removes the runtime request", async () => {
 it("retains final diagnostic bytes for an actual failed codec process", async () => {
   const response = await realDecoder({
     launcher: (options) =>
-      spawnOwnedProviderProcess({
+      spawnOwnedInternalProcess({
         ...options,
         arguments: [
           "-e",
@@ -221,7 +212,7 @@ it("reports complete evidence amplification as a resource failure before seriali
 it("rejects a malformed actual subprocess reply", async () => {
   const response = await realDecoder({
     launcher: (options) =>
-      spawnOwnedProviderProcess({
+      spawnOwnedInternalProcess({
         ...options,
         arguments: ["-e", 'process.stdout.write("not JSON")'],
       }),
@@ -235,7 +226,7 @@ it("rejects a codec report from a runtime other than the launching one", async (
   const replay = (report: unknown) =>
     realDecoder({
       launcher: (options) =>
-        spawnOwnedProviderProcess({
+        spawnOwnedInternalProcess({
           ...options,
           arguments: [
             "-e",
@@ -284,7 +275,7 @@ it.each([true, false])(
         );
         // Without a job limit any artifact runs the child; its handle reports
         // the notification an owned Windows job records before exit.
-        const spawned = await spawnOwnedProviderProcess({
+        const spawned = await spawnOwnedInternalProcess({
           ...options,
           arguments: [
             "-e",

@@ -49,13 +49,13 @@ When REA runs on Bun, the `rea doctor` `node` check reports the Bun version and
 the Node.js compatibility version Bun declares, and passes when that
 compatibility version is in the supported range. Bun does not enforce the V8
 heap flags REA gives its owned helper processes, so Evidence that reports those
-limits on Node.js records them as unavailable under Bun. On Windows, the owned
-Job Object of each JavaScript helper (source analyzer, source-map codec and HAR
-decoder) instead limits its committed memory to that helper's heap budget plus
-a 512 MiB reserve for Bun itself, and Evidence reports that limit. This needs
-the matching bundled Windows native artifact; an artifact without the control
-refuses to start the helper rather than running it unlimited. CI tests Node.js
-only.
+limits on Node.js records them as unavailable under Bun. Windows launches each
+JavaScript helper (source analyzer, source-map codec and HAR decoder) in an
+owned Job Object with kill-on-owner-close. Under Bun, that Job Object also
+limits committed memory to the helper's heap budget plus a 512 MiB reserve for
+Bun itself, and Evidence reports that limit. Windows helper launches require
+the matching bundled native artifact; an artifact without the required
+ownership control refuses to start the helper. CI tests Node.js only.
 
 Running `npm install rea-agents` without `--global` installs the executable only
 in the current project's `node_modules/.bin`; it does not make `rea` available

@@ -3,7 +3,10 @@ import { expect, it } from "vitest";
 import { err } from "../domain/result.js";
 import { AnalysisOutputError } from "../domain/analysisErrorCore.js";
 import type { ArtifactReader } from "./ArtifactReader.js";
-import { ArtifactResourceScope } from "./ArtifactResourceScope.js";
+import {
+  ArtifactResourceCleanupFailure,
+  ArtifactResourceScope,
+} from "./ArtifactResourceScope.js";
 
 const deferred = <T>() => {
   let resolve: (value: T) => void = () => {};
@@ -45,10 +48,14 @@ it("waits for admitted operations and shares concurrent close", async () => {
 it("retains the same failed reader owner and retries before admitting work", async () => {
   const scope = new ArtifactResourceScope();
   let closeAttempts = 0;
+  let lastFailure: Error | undefined;
   const reader = {
     async close() {
       closeAttempts += 1;
-      if (closeAttempts < 4) throw new Error(`close attempt ${closeAttempts}`);
+      if (closeAttempts < 4) {
+        lastFailure = new Error(`close attempt ${closeAttempts}`);
+        throw lastFailure;
+      }
     },
   } as unknown as ArtifactReader;
   const owner = { kind: "reader" as const, resource: "fixture reader", reader };
@@ -56,10 +63,21 @@ it("retains the same failed reader owner and retries before admitting work", asy
   expect(await scope.release(owner)).toMatchObject({ kind: "failed" });
   expect(closeAttempts).toBe(1);
 
-  await expect(scope.run(async () => "must not run")).rejects.toMatchObject({
+  let retryFailure: unknown;
+  await scope
+    .run(async () => "must not run")
+    .catch((cause: unknown) => {
+      retryFailure = cause;
+    });
+  expect(retryFailure).toBeInstanceOf(ArtifactResourceCleanupFailure);
+  expect(retryFailure).toMatchObject({
     reason: "unavailable",
     message: "Artifact cleanup remains incomplete: fixture reader",
+    cleanup: { resources: ["fixture reader"] },
   });
+  expect((retryFailure as ArtifactResourceCleanupFailure).failures).toEqual([
+    { owner, cause: lastFailure },
+  ]);
   expect(closeAttempts).toBe(2);
   await expect(scope.close()).rejects.toMatchObject({
     reason: "unavailable",

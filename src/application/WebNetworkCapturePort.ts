@@ -12,4 +12,6 @@ export interface WebNetworkCapturePort {
     input: InspectWebNetworkCaptureInput,
     options?: ExecutionOptions,
   ): Promise<Result<WebNetworkCapture, AnalysisError>>;
+  /** Close retained decoder resources after stopping admission. */
+  close?(): Promise<void>;
 }
