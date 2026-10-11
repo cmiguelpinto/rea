@@ -17,6 +17,7 @@ import {
   ghidraProfileLanguageOverride,
   sameGhidraLanguageOverride,
 } from "./GhidraAnalysisProfile.js";
+import { ghidraPinnedArmLanguage } from "./GhidraArmProfile.js";
 import type { AnalysisProfileCommitment } from "../domain/analysisProfile.js";
 import type { BinaryTarget } from "../domain/binaryTargetTypes.js";
 import {
@@ -420,6 +421,20 @@ export const createGhidraProviderClient = (input: {
   const languageOverride = ghidraProfileLanguageOverride(
     committedProfile.parameters,
   );
+  const pinnedLanguage = ghidraPinnedArmLanguage(committedProfile.parameters);
+  if (
+    pinnedLanguage !== undefined &&
+    (languageOverride !== undefined ||
+      config.ghidraLanguageOverride !== undefined)
+  )
+    return unavailableClient(
+      new ProviderAdapterError("ghidra", "open_binary", {
+        diagnostics: {
+          reason:
+            "The committed ARM profile pins its import language; REA_GHIDRA_LANGUAGE_ID/REA_GHIDRA_COMPILER_SPEC_ID cannot be combined with it. Reopen the target without the override.",
+        },
+      }),
+    );
   if (
     !sameGhidraLanguageOverride(languageOverride, config.ghidraLanguageOverride)
   )
@@ -431,6 +446,9 @@ export const createGhidraProviderClient = (input: {
         },
       }),
     );
+  // Import language: a caller-selected override wins; a provider-pinned ARM
+  // profile supplies its own because header auto-selection misselects.
+  const importLanguage = languageOverride ?? pinnedLanguage;
   const invalidProfile = validateGhidraExtensionProfile(
     extensions,
     config,
@@ -467,6 +485,14 @@ export const createGhidraProviderClient = (input: {
     ...(target.kind === "executable" && target.architecture === "mips"
       ? (target.mips.limitations ?? [])
       : []),
+    // The pinned-language statements describe the provider pin, which a
+    // caller-selected override replaces; they stay out of those sessions.
+    ...(pinnedLanguage === undefined
+      ? []
+      : [
+          "The ARM lane pins the ARM:LE:32:v7 import language and checks it after import; Ghidra header auto-selection is not used for this admission.",
+          "ARM and Thumb-2 interworking is analyzed per instruction set state; the ELF float ABI declaration does not change the modeled calling convention.",
+        ]),
   ];
   const providerLimitations =
     installation.platform === "win32"
@@ -500,7 +526,9 @@ export const createGhidraProviderClient = (input: {
               baseAddr: target.entryPoint,
             },
           }),
-      ...(languageOverride === undefined ? {} : { languageOverride }),
+      ...(importLanguage === undefined
+        ? {}
+        : { languageOverride: importLanguage }),
       ...(seeds === undefined ? {} : { analysisSeeds: seeds }),
       platform: installation.platform,
       ...(extensions.length === 0 ? {} : { analysisExtensions: extensions }),
@@ -522,13 +550,13 @@ export const createGhidraProviderClient = (input: {
           expectedCompilerSpecId: "default",
         }
       : rawLanguage === undefined
-        ? languageOverride === undefined
+        ? importLanguage === undefined
           ? {}
           : {
-              expectedLanguageId: languageOverride.languageId,
-              ...(languageOverride.compilerSpecId === undefined
+              expectedLanguageId: importLanguage.languageId,
+              ...(importLanguage.compilerSpecId === undefined
                 ? {}
-                : { expectedCompilerSpecId: languageOverride.compilerSpecId }),
+                : { expectedCompilerSpecId: importLanguage.compilerSpecId }),
             }
         : {
             expectedLanguageId: rawLanguage.languageId,

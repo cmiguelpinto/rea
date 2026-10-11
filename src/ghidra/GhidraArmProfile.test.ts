@@ -1,0 +1,119 @@
+import { describe, expect, it } from "vitest";
+import { parseConfig } from "../config/parseConfig.js";
+import type {
+  ArmElfMetadata,
+  BinaryTarget,
+} from "../domain/binaryTargetTypes.js";
+import { silentLogger } from "../logger.js";
+import { GhidraProvider } from "./GhidraProvider.js";
+import {
+  ghidraArmProfileParameters,
+  ghidraPinnedArmLanguage,
+} from "./GhidraArmProfile.js";
+import type { GhidraInstallationHost } from "./GhidraInstallation.js";
+
+// Fake installation inspection tests admission/profile contracts, not Ghidra.
+const host: GhidraInstallationHost = {
+  platform: "linux",
+  architecture: "x64",
+  readText: () => "application.version=12.1.4\n",
+  executable: () => true,
+  probeJava: () => ({
+    version: "21.0.11",
+    major: 21,
+    home: "/jdk-21",
+    bits: 64,
+    runtime: "jdk",
+  }),
+};
+const parsed = parseConfig({ GHIDRA_INSTALL_DIR: "/ghidra" });
+if (!parsed.ok) throw parsed.error;
+const config = parsed.value;
+const target = (change: Partial<ArmElfMetadata> = {}): BinaryTarget => ({
+  path: "/fixture.elf",
+  sha256: "a".repeat(64),
+  kind: "executable",
+  format: "elf",
+  architecture: "arm",
+  availableArchitectures: ["arm"],
+  arm: {
+    elfClass: 32,
+    byteOrder: "little",
+    type: 2,
+    flags: 0x05000400,
+    ...change,
+  },
+});
+
+describe("bounded Ghidra ARM admission", () => {
+  it("admits a verified armhf header with a pinned 32-bit v7 language", async () => {
+    const ghidra = new GhidraProvider(config, silentLogger, {}, host);
+    expect(ghidra.inspectTargetSupport(target()).status).toBe("supported");
+    const resolved = await ghidra.resolveAnalysisProfile(target());
+    if (!resolved.ok) throw resolved.error;
+    expect(resolved.value.profile?.parameters).toMatchObject({
+      arm_elf: {
+        elf_class: 32,
+        byte_order: "little",
+        type: 2,
+        flags: 0x05000400,
+        float_abi: "hard",
+      },
+      arm_support_lane: "elf32-exec-le-eabi5-v7-pinned-v1",
+      language_id: "ARM:LE:32:v7",
+      compiler_spec_id: "default",
+      language_selection: "provider-pinned-v1",
+    });
+  });
+
+  it("records an unspecified float convention as such", () => {
+    const parameters = ghidraArmProfileParameters(
+      target({ flags: 0x05000000 }),
+    );
+    expect(parameters.arm_elf).toMatchObject({ float_abi: "unspecified" });
+  });
+
+  it.each([
+    [{ elfClass: 64 }, "ELF32"],
+    [{ byteOrder: "big" }, "little-endian"],
+    [{ type: 3 }, "ET_EXEC"],
+    [{ type: 0xffa0 }, "ET_EXEC"],
+    [{ flags: 0x04000400 }, "EABI5"],
+    [{ flags: 0x05800400 }, "BE8"],
+    [{ flags: 0x05000600 }, "FLOAT_SOFT"],
+  ] satisfies [Partial<ArmElfMetadata>, string][])(
+    "refuses an unverified ARM interpretation %j",
+    async (change, reason) => {
+      const ghidra = new GhidraProvider(config, silentLogger, {}, host);
+      const value = target(change);
+      expect(ghidra.inspectTargetSupport(value)).toMatchObject({
+        status: "unsupported",
+        reason: expect.stringContaining(reason),
+      });
+      const resolved = await ghidra.resolveAnalysisProfile(value);
+      expect(resolved.ok).toBe(false);
+    },
+  );
+
+  it("a caller-selected language wins over the provider pin", () => {
+    const parameters = ghidraArmProfileParameters(target(), {
+      languageId: "ARM:LE:32:Cortex",
+      compilerSpecId: "default",
+    });
+    expect(parameters.language_selection).toBeUndefined();
+    expect(parameters.language_id).toBeUndefined();
+    expect(parameters).toMatchObject({
+      arm_support_lane: "elf32-exec-le-eabi5-v7-pinned-v1",
+    });
+  });
+
+  it("reads the pinned import language back only from pinned profiles", () => {
+    const pinned = ghidraArmProfileParameters(target());
+    expect(ghidraPinnedArmLanguage(pinned)).toEqual({
+      languageId: "ARM:LE:32:v7",
+      compilerSpecId: "default",
+    });
+    const other = { language_selection: "configured-v1" };
+    expect(ghidraPinnedArmLanguage(other)).toBeUndefined();
+  });
+});

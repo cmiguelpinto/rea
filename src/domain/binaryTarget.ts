@@ -1,4 +1,5 @@
 import type {
+  ArmElfMetadata,
   BinaryArchitecture,
   MipsElfMetadata,
 } from "./binaryTargetTypes.js";
@@ -14,11 +15,25 @@ export type ExecutableMetadata =
       readonly mips: MipsElfMetadata;
     }
   | {
-      readonly format: "mach-o" | "elf" | "dos-mz" | "dos-com";
+      readonly format: "elf";
+      readonly architecture: "arm";
+      readonly availableArchitectures: readonly "arm"[];
+      readonly arm: ArmElfMetadata;
+    }
+  | {
+      readonly format: "mach-o" | "dos-mz" | "dos-com";
       readonly architecture: Exclude<BinaryArchitecture, "mips">;
       readonly availableArchitectures: readonly Exclude<
         BinaryArchitecture,
         "mips"
+      >[];
+    }
+  | {
+      readonly format: "elf";
+      readonly architecture: Exclude<BinaryArchitecture, "mips" | "arm">;
+      readonly availableArchitectures: readonly Exclude<
+        BinaryArchitecture,
+        "mips" | "arm"
       >[];
     }
   | {
@@ -163,6 +178,10 @@ const parseElf = (
   const machine = little ? bytes.readUInt16LE(18) : bytes.readUInt16BE(18);
   const architecture = elfArchitecture(machine);
   if (architecture === undefined) return err("unsupported ELF architecture");
+  const headerFlags = () =>
+    little
+      ? bytes.readUInt32LE(bytes[4] === 1 ? 36 : 48)
+      : bytes.readUInt32BE(bytes[4] === 1 ? 36 : 48);
   if (architecture === "mips")
     return ok({
       format: "elf",
@@ -172,9 +191,19 @@ const parseElf = (
         elfClass: bytes[4] === 1 ? 32 : 64,
         byteOrder: little ? "little" : "big",
         type: little ? bytes.readUInt16LE(16) : bytes.readUInt16BE(16),
-        flags: little
-          ? bytes.readUInt32LE(bytes[4] === 1 ? 36 : 48)
-          : bytes.readUInt32BE(bytes[4] === 1 ? 36 : 48),
+        flags: headerFlags(),
+      },
+    });
+  if (architecture === "arm")
+    return ok({
+      format: "elf",
+      architecture,
+      availableArchitectures: [architecture],
+      arm: {
+        elfClass: bytes[4] === 1 ? 32 : 64,
+        byteOrder: little ? "little" : "big",
+        type: little ? bytes.readUInt16LE(16) : bytes.readUInt16BE(16),
+        flags: headerFlags(),
       },
     });
   return ok({

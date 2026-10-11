@@ -20,6 +20,14 @@ export interface MipsElfMetadata {
   readonly limitations?: readonly string[];
 }
 
+/** Raw ELF facts for a 32-bit ARM image; recognition does not establish profile support. */
+export interface ArmElfMetadata {
+  readonly elfClass: 32 | 64;
+  readonly byteOrder: "little" | "big";
+  readonly type: number;
+  readonly flags: number;
+}
+
 /** Declared fields of the 24-byte MIPS ABI flags record, not inferred semantics. */
 export interface MipsAbiFlags {
   readonly version: number;
@@ -73,8 +81,28 @@ export type BinaryTarget =
       readonly executableRole?: never;
       readonly managed?: never;
     })
+  | (BinaryTargetIdentity & {
+      readonly kind: "executable";
+      readonly format: "elf";
+      readonly architecture: "arm";
+      readonly availableArchitectures: readonly "arm"[];
+      readonly arm: ArmElfMetadata;
+      readonly executableRole?: never;
+      readonly managed?: never;
+    })
   | (ExecutableTarget & {
-      readonly format: "mach-o" | "elf" | "dos-mz" | "dos-com";
+      readonly format: "mach-o" | "dos-mz" | "dos-com";
+      readonly executableRole?: never;
+      readonly managed?: never;
+    })
+  | (BinaryTargetIdentity & {
+      readonly kind: "executable";
+      readonly format: "elf";
+      readonly architecture: Exclude<BinaryArchitecture, "mips" | "arm">;
+      readonly availableArchitectures: readonly Exclude<
+        BinaryArchitecture,
+        "mips" | "arm"
+      >[];
       readonly executableRole?: never;
       readonly managed?: never;
     })
