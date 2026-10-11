@@ -123,7 +123,10 @@ export const analyzeAndProjectJavaScriptArtifactFiles = async (
 /** Analyze sources behind a hard heap boundary, retaining collected facts on interruption. */
 export const analyzeAndAdoptJavaScriptArtifactFiles = async (
   fileSet: JavaScriptArtifactFileSet,
-  worker: Pick<JavaScriptSourceAnalysisPort, "analyze">,
+  worker: Pick<
+    JavaScriptSourceAnalysisPort,
+    "analyze" | "admitDeferredSemanticGraphs"
+  >,
   projection: JavaScriptSemanticGraphProjection,
   beforeFile: (
     file: JavaScriptArtifactFile,
@@ -251,6 +254,30 @@ export const analyzeAndAdoptJavaScriptArtifactFiles = async (
         );
       }
       break;
+    }
+  }
+  if (worker.admitDeferredSemanticGraphs !== undefined) {
+    const deferred = await worker.admitDeferredSemanticGraphs(signal);
+    for (const item of deferred.admitted)
+      projection.adoptFileProjection(item.projection);
+    for (const item of deferred.rejected) {
+      const index = state.files.findIndex(
+        ({ file }) => file.path === item.file.path,
+      );
+      const current = index < 0 ? undefined : state.files[index];
+      if (current === undefined) continue;
+      const failure = {
+        reason: `${item.file.path}: ${item.error.message}`,
+        error: projectAnalysisError(item.error),
+        limits: item.error.reportedLimits,
+      };
+      state.files[index] = { ...current, analysis_failure: failure };
+      projection.recordUnavailableFile(
+        item.file,
+        failure.reason,
+        failure.limits,
+        "resource-limit",
+      );
     }
   }
   if (interruption !== null) {

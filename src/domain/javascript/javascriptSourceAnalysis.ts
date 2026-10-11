@@ -36,5 +36,19 @@ export interface JavaScriptSourceAnalysisPort {
     nodeBudget: number,
     signal?: AbortSignal,
   ): Promise<Result<JavaScriptAnalyzedSource, JavaScriptSourceAnalysisFailure>>;
+  /**
+   * Read semantic graphs deferred until later sources no longer require the
+   * worst-case static reserve. Absent when the analyzer has nothing to retry.
+   */
+  admitDeferredSemanticGraphs?(signal?: AbortSignal): Promise<{
+    readonly admitted: readonly {
+      readonly file: JavaScriptArtifactFile;
+      readonly projection: JavaScriptSemanticFileProjection;
+    }[];
+    readonly rejected: readonly {
+      readonly file: JavaScriptArtifactFile;
+      readonly error: AnalysisResourceConstraintError;
+    }[];
+  }>;
   close(): Promise<void>;
 }

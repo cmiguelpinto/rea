@@ -44,7 +44,10 @@ export const javaScriptAnalysisTransferDescriptorSchema = z.strictObject({
   graph_bytes: z.number().int().nonnegative(),
   graph_records: z.number().int().nonnegative(),
 });
-type Descriptor = z.output<typeof javaScriptAnalysisTransferDescriptorSchema>;
+export type JavaScriptAnalysisTransferDescriptor = z.output<
+  typeof javaScriptAnalysisTransferDescriptorSchema
+>;
+type Descriptor = JavaScriptAnalysisTransferDescriptor;
 
 /** Conservative retained-object and sealing expansion for validated transfer rows. */
 export const javaScriptTransferRetentionBytes = (

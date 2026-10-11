@@ -16,6 +16,7 @@ import type {
   JavaScriptSourceAnalysisLimits,
 } from "../../domain/javascript/javascriptSourceAnalysis.js";
 import { AnalysisError } from "../../domain/analysisErrorBase.js";
+import type { JsonValue } from "../../domain/jsonValue.js";
 import {
   AnalysisCancelledError,
   AnalysisTimeoutError,
@@ -46,6 +47,7 @@ import {
   readJavaScriptAnalysisTransfer,
   JAVASCRIPT_ANALYSIS_TRANSFER_RECORD_BYTES,
   javaScriptTransferRetentionBytes,
+  type JavaScriptAnalysisTransferDescriptor,
 } from "./JavaScriptAnalysisTransfer.js";
 import { javaScriptWorkerStaticAnalysisSchema } from "./JavaScriptAnalysisWorkerSchemas.js";
 import {
@@ -65,6 +67,14 @@ const WORKER_HEAP_FLAGS_ENFORCED =
   javaScriptRuntime(process.versions).id === "node";
 
 /** One sequential owned worker, retained between source files and closed after analysis. */
+interface DeferredSemanticGraph {
+  readonly id: string;
+  readonly descriptor: JavaScriptAnalysisTransferDescriptor;
+  readonly file: JavaScriptArtifactFile;
+  readonly moduleEstimate: number;
+  readonly graphEstimate: number;
+}
+
 export class JavaScriptAnalysisWorker {
   readonly #runId = `rea-javascript-analysis-${randomUUID()}`;
   #root: PrivateRuntimeRoot | undefined;
@@ -82,6 +92,7 @@ export class JavaScriptAnalysisWorker {
   #parentCapacityExhausted = false;
   #retainedStaticBytes = 0;
   #sourcesRemaining: number | undefined;
+  #deferredGraphs: DeferredSemanticGraph[] = [];
   readonly #resultBudgetBytes: number;
   /** Null when the runtime enforces the V8 heap flags instead. */
   readonly #processMemoryLimitBytes: number | null;
@@ -243,15 +254,10 @@ export class JavaScriptAnalysisWorker {
             );
           javascript = await this.#readCheckpoint(id, file.path, response);
           if (this.#parentCapacityExhausted)
-            throw new AnalysisResourceConstraintError(
-              OPERATION,
-              "memory",
-              `The parent's result capacity was exhausted after retaining static facts for ${file.path}; remaining sources were not analyzed`,
-              {
-                ...this.#limits(),
-                parent_result_budget_bytes: this.#resultBudgetBytes,
-                parent_result_budget_exhausted: true,
-              },
+            throw this.#parentAdmissionError(
+              `The parent's result-admission budget was exhausted after retaining static facts for ${file.path}; remaining sources were not analyzed`,
+              this.#remainingResultBudget(),
+              { parent_result_budget_exhausted: true },
             );
           offeredResultBudget =
             this.#applicationProjectionFailure !== undefined &&
@@ -272,16 +278,34 @@ export class JavaScriptAnalysisWorker {
         }
         if (response.kind === "failure") {
           if (response.reason === "resource") {
+            const semanticBudget =
+              response.limits?.semantic_result_budget_bytes;
+            const parentAdmission =
+              semanticBudget === 0 ||
+              response.message.includes("parent reserved") ||
+              response.message.includes("parent's");
             result = err({
               javascript,
               module,
               projection,
-              error: new AnalysisResourceConstraintError(
-                OPERATION,
-                response.resource ?? "memory",
-                `${file.path}: ${response.message}`,
-                { ...this.#limits(), ...response.limits },
-              ),
+              error: parentAdmission
+                ? this.#parentAdmissionError(
+                    semanticBudget === 0
+                      ? `The parent's result-admission budget cannot start semantic analysis of ${file.path}; static facts were retained`
+                      : `${file.path}: ${response.message}`,
+                    typeof semanticBudget === "number" ? semanticBudget : 0,
+                    {
+                      ...response.limits,
+                      semantic_result_budget_bytes:
+                        typeof semanticBudget === "number" ? semanticBudget : 0,
+                    },
+                  )
+                : new AnalysisResourceConstraintError(
+                    OPERATION,
+                    response.resource ?? "memory",
+                    `${file.path}: ${response.message}`,
+                    { ...this.#limits(), ...response.limits },
+                  ),
             });
             break;
           }
@@ -319,15 +343,10 @@ export class JavaScriptAnalysisWorker {
             javascript,
             module: null,
             projection: null,
-            error: new AnalysisResourceConstraintError(
-              OPERATION,
-              "memory",
-              `Completed module facts for ${file.path} exceed the parent's remaining result budget; static facts were retained`,
-              {
-                ...this.#limits(),
-                parent_result_budget_bytes: this.#resultBudgetBytes,
-                module_transfer_bytes: descriptor.module_bytes,
-              },
+            error: this.#parentAdmissionError(
+              `Completed module facts for ${file.path} exceed the parent's remaining result-admission budget; static facts were retained`,
+              remaining,
+              { module_transfer_bytes: descriptor.module_bytes },
             ),
           });
           break;
@@ -343,26 +362,41 @@ export class JavaScriptAnalysisWorker {
         );
         module = decoded.module;
         projection = decoded.projection;
+        const needed = moduleEstimate + graphEstimate;
+        const deferGraph =
+          !retainGraph &&
+          this.#futureStaticReserve() > 0 &&
+          needed <= this.#remainingTotalResultBudget();
         this.#estimatedRetainedBytes +=
           moduleEstimate + (retainGraph ? graphEstimate : 0);
-        result = retainGraph
-          ? ok({ javascript, module, projection: decoded.projection })
-          : err({
-              javascript,
-              module,
-              projection,
-              error: new AnalysisResourceConstraintError(
-                OPERATION,
-                "memory",
-                `Semantic graph for ${file.path} exceeds the parent's remaining result budget; static and module facts were retained`,
-                {
-                  ...this.#limits(),
-                  parent_result_budget_bytes: this.#resultBudgetBytes,
-                  graph_transfer_bytes: descriptor.graph_bytes,
-                  graph_records: descriptor.graph_records,
-                },
-              ),
-            });
+        if (deferGraph) {
+          // The later files are still unknown, so the reserve is the protocol
+          // maximum. Keep the transfer until that reserve shrinks.
+          this.#deferredGraphs.push({
+            id,
+            descriptor,
+            file,
+            moduleEstimate,
+            graphEstimate,
+          });
+          result = ok({ javascript, module, projection: null });
+        } else {
+          result = retainGraph
+            ? ok({ javascript, module, projection: decoded.projection })
+            : err({
+                javascript,
+                module,
+                projection,
+                error: this.#parentAdmissionError(
+                  `Semantic graph for ${file.path} exceeds the parent's remaining result-admission budget; static and module facts were retained`,
+                  remaining,
+                  {
+                    graph_transfer_bytes: descriptor.graph_bytes,
+                    graph_records: descriptor.graph_records,
+                  },
+                ),
+              });
+        }
         break;
       }
       // An allocation failure may surface as a protocol failure or be caught
@@ -395,7 +429,10 @@ export class JavaScriptAnalysisWorker {
     // cleanup uncertainty, close retains this owner for a later retry.
     if (this.#root !== undefined && !pendingCleanup.has(this)) {
       try {
-        for (const suffix of ["source", "static.json", "records"])
+        const keepRecords = this.#deferredGraphs.some((item) => item.id === id);
+        for (const suffix of keepRecords
+          ? (["source", "static.json"] as const)
+          : (["source", "static.json", "records"] as const))
           await rm(join(this.#root.path, `${id}.${suffix}`), { force: true });
       } catch (cause: unknown) {
         pendingCleanup.add(this);
@@ -420,6 +457,73 @@ export class JavaScriptAnalysisWorker {
     return result;
   }
 
+  /**
+   * Admit graphs held back only for later static checkpoints, once that
+   * reserve has shrunk. Records stay in the private runtime until close.
+   */
+  async admitDeferredSemanticGraphs(signal?: AbortSignal): Promise<{
+    readonly admitted: readonly {
+      readonly file: JavaScriptArtifactFile;
+      readonly projection: JavaScriptSemanticFileProjection;
+    }[];
+    readonly rejected: readonly {
+      readonly file: JavaScriptArtifactFile;
+      readonly error: AnalysisResourceConstraintError;
+    }[];
+  }> {
+    const root = this.#root;
+    if (root === undefined || this.#deferredGraphs.length === 0)
+      return { admitted: [], rejected: [] };
+    const admitted: {
+      readonly file: JavaScriptArtifactFile;
+      readonly projection: JavaScriptSemanticFileProjection;
+    }[] = [];
+    const rejected: {
+      readonly file: JavaScriptArtifactFile;
+      readonly error: AnalysisResourceConstraintError;
+    }[] = [];
+    const pending: DeferredSemanticGraph[] = [];
+    for (const item of this.#deferredGraphs) {
+      if (signal?.aborted === true) {
+        pending.push(item);
+        continue;
+      }
+      // The module estimate was charged when the transfer was first retained.
+      const admissionBudget = this.#remainingResultBudget();
+      if (item.graphEstimate > admissionBudget) {
+        await rm(join(root.path, `${item.id}.records`), { force: true });
+        rejected.push({
+          file: item.file,
+          error: this.#parentAdmissionError(
+            `Semantic graph for ${item.file.path} exceeds the parent's remaining result-admission budget; static and module facts were retained`,
+            admissionBudget,
+            {
+              graph_transfer_bytes: item.descriptor.graph_bytes,
+              graph_records: item.descriptor.graph_records,
+            },
+          ),
+        });
+        continue;
+      }
+      const decoded = await readJavaScriptAnalysisTransfer(
+        join(root.path, `${item.id}.records`),
+        item.descriptor,
+        item.file,
+        signal,
+        true,
+      );
+      if (decoded.projection === null) {
+        pending.push(item);
+        continue;
+      }
+      await rm(join(root.path, `${item.id}.records`), { force: true });
+      this.#estimatedRetainedBytes += item.graphEstimate;
+      admitted.push({ file: item.file, projection: decoded.projection });
+    }
+    this.#deferredGraphs = pending;
+    return { admitted, rejected };
+  }
+
   /** Verify process cleanup, then release the private runtime; failed close is retryable. */
   async close(): Promise<void> {
     const failure = await this.#stop();
@@ -433,6 +537,7 @@ export class JavaScriptAnalysisWorker {
         throw this.#cleanupError(message(cause));
       }
     }
+    this.#deferredGraphs = [];
     pendingCleanup.delete(this);
   }
 
@@ -594,14 +699,10 @@ export class JavaScriptAnalysisWorker {
     if (expandedBytes <= this.#remainingResultBudget())
       this.#estimatedRetainedBytes += expandedBytes;
     else
-      this.#applicationProjectionFailure = new AnalysisResourceConstraintError(
-        OPERATION,
-        "memory",
-        `Expanded application relationships for ${sourcePath} exceed the parent's result budget; complete static facts were retained on the file node`,
-        {
-          parent_result_budget_bytes: this.#resultBudgetBytes,
-          application_projection_required_bytes: expandedBytes,
-        },
+      this.#applicationProjectionFailure = this.#parentAdmissionError(
+        `Expanded application relationships for ${sourcePath} exceed the parent's result-admission budget; complete static facts were retained on the file node`,
+        this.#remainingResultBudget(),
+        { application_projection_required_bytes: expandedBytes },
       );
     return facts;
   }
@@ -637,19 +738,45 @@ export class JavaScriptAnalysisWorker {
       { capturedOutput: this.#captured() },
     );
   }
+  #futureStaticReserve(): number {
+    const remaining = this.#sourcesRemaining;
+    if (remaining === undefined || remaining <= 0) return 0;
+    // Reserve only the next static checkpoint. Each later file releases that
+    // reserve when it starts, so one module is not charged for every
+    // subsequent source. The protocol bounds a checkpoint at 8 MiB, and
+    // checkpoint admission charges six retained bytes per checkpoint byte.
+    return DEFAULTS.checkpointBytes * 6;
+  }
+  #parentAdmissionError(
+    reason: string,
+    admissionBudgetBytes: number,
+    limits: Readonly<Record<string, JsonValue>>,
+  ): AnalysisResourceConstraintError {
+    return new AnalysisResourceConstraintError(
+      OPERATION,
+      "memory",
+      reason,
+      {
+        ...this.#limits(),
+        parent_result_budget_bytes: this.#resultBudgetBytes,
+        parent_admission_budget_bytes: admissionBudgetBytes,
+        future_static_reserve_bytes: this.#futureStaticReserve(),
+        ...limits,
+      },
+      {
+        remediationAction:
+          "This limit is the parent's result-admission budget after reserving protocol-bounded static checkpoints for later sources. It is not the JavaScript worker heap. Review parent_admission_budget_bytes and future_static_reserve_bytes. Analyze fewer sources together or raise the parent process heap; raising the worker heap does not admit this result.",
+      },
+    );
+  }
   #remainingResultBudget(): number {
-    // Future sources need their compact observations before current modules
-    // consume capacity with expanded relationships. A final or sole source
+    // Later sources need their static checkpoints before the current module
+    // consumes capacity with expanded relationships. A final or sole source
     // can use the unused reserve as well.
-    const staticReserve =
-      this.#sourcesRemaining !== undefined && this.#sourcesRemaining > 0
-        ? Math.max(
-            0,
-            Math.floor((this.#resultBudgetBytes * 4) / 5) -
-              this.#retainedStaticBytes,
-          )
-        : 0;
-    return Math.max(0, this.#remainingTotalResultBudget() - staticReserve);
+    return Math.max(
+      0,
+      this.#remainingTotalResultBudget() - this.#futureStaticReserve(),
+    );
   }
   #remainingTotalResultBudget(): number {
     return Math.max(
