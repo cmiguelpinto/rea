@@ -41,6 +41,15 @@ export const resolveJavaScriptIntrinsicInvocation = (
   let explicitReceiver = false;
   for (;;) {
     callee = unwrapJavaScriptExpression(callee).node;
+    if (t.isSequenceExpression(callee)) {
+      const finalExpression = callee.expressions.at(-1);
+      if (finalExpression === undefined) return undefined;
+      // Comma yields a value, not a member reference. An outer invocation
+      // can still supply an explicit receiver for that value.
+      explicitReceiver = true;
+      callee = finalExpression;
+      continue;
+    }
     if (visited.has(callee)) return undefined;
     visited.add(callee);
     let path = intrinsicPath(callee);

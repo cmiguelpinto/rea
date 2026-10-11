@@ -79,60 +79,60 @@ export function* collectJavaScriptIdentityWritesSteps(
     "setPrototypeOf",
   ]);
   const keyedMutators = new Set(["set", "deleteProperty", "defineProperty"]);
-  yield* traverseJavaScriptAstSteps(program, {
-    enter: (node) => {
-      if (t.isCallExpression(node) || t.isOptionalCallExpression(node)) {
-        const invocation = intrinsicInvocation(node);
-        if (invocation?.kind === "opaque") {
+  const retainCallEffects = (
+    node: t.CallExpression | t.OptionalCallExpression,
+  ): void => {
+    const invocation = intrinsicInvocation(node);
+    if (invocation?.kind === "opaque") {
+      const scope = origin(node, "opaque-call");
+      if (scope !== undefined) retain(node, scope);
+      return;
+    }
+    const callee = invocation?.path;
+    const arguments_ = invocation?.arguments;
+    const method = callee?.at(-1);
+    const owner = callee?.length === 3 ? callee[1] : undefined;
+    if (
+      (owner === "Object" && objectMutators.has(method ?? "")) ||
+      (owner === "Reflect" && reflectMutators.has(method ?? ""))
+    ) {
+      // Reflect.set can write through its explicit receiver as well as
+      // dispatching through its target. Both identities need examination.
+      const targets =
+        owner === "Reflect" &&
+        method === "set" &&
+        arguments_ !== undefined &&
+        (arguments_.length >= 4 || arguments_.some(t.isSpreadElement))
+          ? [
+              arguments_[0],
+              arguments_.some(t.isSpreadElement) ? undefined : arguments_[3],
+            ]
+          : [arguments_?.[0]];
+      for (const target of targets) {
+        // A known mutator with an opaque argument list can overwrite any
+        // captured intrinsic. Do not turn an unexamined target into proof.
+        if (target === undefined || t.isSpreadElement(target)) {
           const scope = origin(node, "opaque-call");
           if (scope !== undefined) retain(node, scope);
-          return;
         }
-        const callee = invocation?.path;
-        const arguments_ = invocation?.arguments;
-        const method = callee?.at(-1);
-        const owner = callee?.length === 3 ? callee[1] : undefined;
-        if (
-          (owner === "Object" && objectMutators.has(method ?? "")) ||
-          (owner === "Reflect" && reflectMutators.has(method ?? ""))
-        ) {
-          // Reflect.set can write through its explicit receiver as well as
-          // dispatching through its target. Both identities need examination.
-          const targets =
-            owner === "Reflect" &&
-            method === "set" &&
-            arguments_ !== undefined &&
-            (arguments_.length >= 4 || arguments_.some(t.isSpreadElement))
-              ? [
-                  arguments_[0],
-                  arguments_.some(t.isSpreadElement)
-                    ? undefined
-                    : arguments_[3],
-                ]
-              : [arguments_?.[0]];
-          for (const target of targets) {
-            // A known mutator with an opaque argument list can overwrite any
-            // captured intrinsic. Do not turn an unexamined target into proof.
-            if (target === undefined || t.isSpreadElement(target)) {
-              const scope = origin(node, "opaque-call");
-              if (scope !== undefined) retain(node, scope);
-            }
-            if (t.isNode(target) && !t.isSpreadElement(target)) {
-              const { root, members } = electronMemberPath(target);
-              const exported = origin(root, "member");
-              if (exported !== undefined) {
-                const key = keyedMutators.has(method ?? "")
-                  ? [staticString(arguments_?.[1]) ?? null]
-                  : [];
-                retain(node, [...exported, ...members, ...key]);
-              } else if (!freshObject(target)) {
-                const scope = origin(node, "opaque-call");
-                if (scope !== undefined) retain(node, scope);
-              }
-            }
+        if (t.isNode(target) && !t.isSpreadElement(target)) {
+          const { root, members } = electronMemberPath(target);
+          const exported = origin(root, "member");
+          if (exported !== undefined) {
+            const key = keyedMutators.has(method ?? "")
+              ? [staticString(arguments_?.[1]) ?? null]
+              : [];
+            retain(node, [...exported, ...members, ...key]);
+          } else if (!freshObject(target)) {
+            const scope = origin(node, "opaque-call");
+            if (scope !== undefined) retain(node, scope);
           }
         }
       }
+    }
+  };
+  yield* traverseJavaScriptAstSteps(program, {
+    enter: (node) => {
       const target = t.isAssignmentExpression(node)
         ? node.left
         : t.isUpdateExpression(node)
@@ -153,6 +153,10 @@ export function* collectJavaScriptIdentityWritesSteps(
         const exported = origin(root, "member");
         if (exported !== undefined) retain(node, [...exported, ...members]);
       }
+    },
+    exit: (node) => {
+      if (t.isCallExpression(node) || t.isOptionalCallExpression(node))
+        retainCallEffects(node);
     },
   });
 }

@@ -38,6 +38,10 @@ const INTRINSIC_MUTATIONS = [
   ],
   ["receiver.cjs", 'Reflect.set({},"create",customCreate,Object);'],
   [
+    "sequence.cjs",
+    '(0,Object.defineProperty)(Object,"create",{value:customCreate});',
+  ],
+  [
     "deep-call.cjs",
     'Function.prototype.call.call.call(Object.defineProperty,null,Object,"create",{value:customCreate});',
   ],
@@ -89,6 +93,7 @@ cliTest.for(["CLI", "stdio MCP"] as const)(
       function hoistedFunction() {}
       const captured = Object.defineProperty;
       Object.defineProperty = custom;
+      captured.call(null,metadata,"captured",{value:1});
       ${ROLLDOWN_MODULE_INTEROP.replace("__defProp = Object.defineProperty", "__defProp = captured")}
       let electron = require("electron");
       electron = __toESM(electron, 1);
@@ -119,6 +124,7 @@ cliTest.for(["CLI", "stdio MCP"] as const)(
       require("./generic-bind.cjs");
       require("./replaced-apply.cjs");
       require("./receiver.cjs");
+      require("./sequence.cjs");
       require("./deep-call.cjs");
       require("./deep-apply.cjs");
       throw new Error("must not execute main");
@@ -147,7 +153,7 @@ cliTest.for(["CLI", "stdio MCP"] as const)(
       preload_entrypoints: 1,
     });
     expect(result.statistics.parse_failures).toBe(0);
-    expect(result.statistics.parsed_javascript_files).toBe(12);
+    expect(result.statistics.parsed_javascript_files).toBe(13);
     const windows = result.graph.nodes.filter(
       ({ kind }) => kind === "browser-window",
     );
