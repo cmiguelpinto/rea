@@ -135,6 +135,7 @@ describe its recorded investigation; update them only when repeating that work.
 - `public/showcase/notion/index.html`: Notion's Electron clipboard bridge and rich clipboard format.
 - `public/showcase/th04/index.html`: TH04's 16-bit DOS bullet-angle calculation and compiler checks.
 - `public/showcase/ctf/index.html`: DownUnderCTF's masked-squares flag checker, extracted equations and real process captures.
+- `public/demos/index.html`: reproducible JavaScript, native-provider and browser starter investigations, with verification boundaries.
 - `public/get-started/index.html`: agent setup, first CLI result and provider guides.
 - `public/faq/index.html`: concise answers about setup, updates, analysis and troubleshooting.
 - `public/guides/`: a guide hub and native, JavaScript/Electron and browser examples.
@@ -236,6 +237,12 @@ REA package, example digests and observed results behind the guides. The Notes
 Electron fixture is for static analysis; Electron is not a prerequisite for
 following that example. The separate Notes browser app runs in the local preview
 and constructs a CSV download after fetching its JSON data.
+
+[evidence/reproducible-demos.md](evidence/reproducible-demos.md) records the
+D01–D03 demo portfolio's source revision, target digest, CLI and browser results,
+cleanup outcome, provider and agent blockers, and resource measurements that
+remain unknown. Keep this record and `public/demos/index.html` aligned when a
+new provider run, transcript or recording is added.
 
 The Electron guide offers one ZIP containing the six source files under
 `notes-example/`. `scripts/prepare-website.py` generates this download from

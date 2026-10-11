@@ -12,6 +12,22 @@ export async function startBrowserVerifierSite() {
       return;
     }
     const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (requestUrl.pathname === "/portfolio-demo") {
+      const variant = requestUrl.searchParams.get("variant");
+      const result =
+        variant === "changed" ? "Exported 3 notes" : "Exported 2 notes";
+      response.setHeader("content-type", "text/html");
+      response.end(`<!doctype html><html lang="en"><body>
+        <button id="export" type="button">Export notes</button>
+        <output id="result" data-state="idle">Ready</output>
+        <script>document.querySelector('#export').addEventListener('click', () => {
+          const result = document.querySelector('#result');
+          result.textContent = ${JSON.stringify(result)};
+          result.dataset.state = 'ready';
+        });</script>
+      </body></html>`);
+      return;
+    }
     if (requestUrl.pathname === "/scenario-environment") {
       const requestedRun = requestUrl.searchParams.get("run");
       const run = ["A", "B", "C"].includes(requestedRun)

@@ -17,7 +17,7 @@
 
 <a href="https://trendshift.io/repositories/82054?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-82054" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/82054" alt="morluto%2Frea | Trendshift" width="250" height="55"/></a>
 
-**[Website](https://rea.tools/) · [Guides](https://rea.tools/guides/) · [Showcases](https://rea.tools/showcase/)**
+**[Website](https://rea.tools/) · [Guides](https://rea.tools/guides/) · [Demos](https://rea.tools/demos/) · [Showcases](https://rea.tools/showcase/)**
 
 [Quick start](#quick-start) · [How REA works](#how-rea-works) · [What you can analyze](#what-you-can-analyze) · [Showcases](#showcases) · [FAQ](#faq) · [Documentation](#documentation)
 
@@ -302,7 +302,8 @@ with your REA version, target type, steps to reproduce and error output.
 
 ## Documentation
 
-Start with the website's [worked guides](https://rea.tools/guides/).
+Start with the website's [worked guides](https://rea.tools/guides/) or
+[reproducible demos](https://rea.tools/demos/).
 For exact options, prerequisites and result contracts:
 
 - [Installation and setup](docs/installation.md): agent registration, provider configuration, updates and uninstall.

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reproducible REA demos</title>
+    <meta
+      name="description"
+      content="Reproduce selected REA investigations across JavaScript applications, native binaries and browser behavior."
+    />
+    <!-- website:sharing:start -->
+    <!-- prettier-ignore -->
+    <link rel="canonical" href="https://rea.tools/demos/" />
+    <!-- prettier-ignore -->
+    <meta property="og:type" content="website" />
+    <!-- prettier-ignore -->
+    <meta property="og:site_name" content="REA" />
+    <!-- prettier-ignore -->
+    <meta property="og:title" content="Reproducible REA demos" />
+    <!-- prettier-ignore -->
+    <meta property="og:description" content="Reproduce selected REA investigations across JavaScript applications, native binaries and browser behavior." />
+    <!-- prettier-ignore -->
+    <meta property="og:url" content="https://rea.tools/demos/" />
+    <!-- prettier-ignore -->
+    <meta property="og:image" content="https://rea.tools/assets/social-card.png" />
+    <!-- prettier-ignore -->
+    <meta property="og:image:type" content="image/png" />
+    <!-- prettier-ignore -->
+    <meta property="og:image:width" content="1200" />
+    <!-- prettier-ignore -->
+    <meta property="og:image:height" content="630" />
+    <!-- prettier-ignore -->
+    <meta
+      property="og:image:alt"
+      content="REA — Find out how software works. Reverse engineering with your coding agent."
+    />
+    <!-- prettier-ignore -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <!-- prettier-ignore -->
+    <meta name="twitter:title" content="Reproducible REA demos" />
+    <!-- prettier-ignore -->
+    <meta name="twitter:description" content="Reproduce selected REA investigations across JavaScript applications, native binaries and browser behavior." />
+    <!-- prettier-ignore -->
+    <meta name="twitter:image" content="https://rea.tools/assets/social-card.png" />
+    <!-- prettier-ignore -->
+    <meta
+      name="twitter:image:alt"
+      content="REA — Find out how software works. Reverse engineering with your coding agent."
+    />
+    <!-- website:sharing:end -->
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../assets/styles.css" />
+    <script src="../assets/main.js" defer></script>
+  </head>
+  <body id="top">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <!-- website:header:start -->
+    <!-- prettier-ignore -->
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="../" aria-label="REA home"
+          ><span class="brand-name">REA</span
+          ><span class="brand-caption">Reverse Engineer Anything</span></a
+        >
+        <nav class="navigation" aria-label="Main navigation">
+          <a href="../showcase/">Showcases</a>
+          <a href="../blog/">Blog</a>
+          <a href="../get-started/" class="nav-start">Get started</a>
+          <a href="../guides/">Guides</a>
+          <a href="../faq/">FAQ</a>
+        </nav>
+        <div class="header-social">
+          <a
+            class="nav-github"
+            href="https://github.com/morluto/rea"
+            aria-label="REA on GitHub"
+            title="REA on GitHub"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                fill="currentColor"
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+              />
+            </svg>
+            <span class="nav-github-count" hidden aria-hidden="true"></span>
+          </a>
+          <a
+            class="nav-discord"
+            href="https://discord.gg/GkcryMnJDM"
+            aria-label="Join REA on Discord"
+            title="Join REA on Discord"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                fill="currentColor"
+                d="M20.317 4.3698a19.7913 19.7913 0 0 0-4.8851-1.5152.0741.0741 0 0 0-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 0 0-.0785-.037 19.7363 19.7363 0 0 0-4.8852 1.515.0699.0699 0 0 0-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 0 0 .0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 0 0 .0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 0 0-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 0 1-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 0 1 .0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 0 1 .0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 0 1-.0066.1276 12.2986 12.2986 0 0 1-1.873.8914.0766.0766 0 0 0-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 0 0 .0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 0 0 .0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 0 0-.0312-.0286ZM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189Zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"
+              />
+            </svg>
+          </a>
+          <a
+            class="nav-x"
+            href="https://x.com/reatools"
+            aria-label="Follow REA on X"
+            title="Follow REA on X"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                fill="currentColor"
+                d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"
+              />
+            </svg>
+          </a>
+        </div>
+      </div>
+    </header>
+    <!-- website:header:end -->
+    <main id="main" class="container">
+      <div class="page-heading">
+        <p class="breadcrumb"><a href="../">Home</a> / Demos</p>
+        <h1>Reproducible REA demos</h1>
+        <p class="lede">
+          Three starter investigations, with source-owned targets, runnable
+          commands and the limits of the evidence collected so far.
+        </p>
+      </div>
+      <article class="article">
+        <section class="article-section" id="status">
+          <h2>Current status</h2>
+          <p>
+            These records separate a completed local workflow from an agent
+            transcript or provider run that has not been captured. A verifier
+            result is not a product benchmark or a recording.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Demo</th>
+                <th scope="col">Status</th>
+                <th scope="col">Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">D01 · Electron CSV export</th>
+                <td>CLI verified; agent transcript not verified</td>
+                <td>Application analysis and a complete feature trace</td>
+              </tr>
+              <tr>
+                <th scope="row">D02 · Native function</th>
+                <td>Blocked by missing BYO analysis provider</td>
+                <td>Source fixture and reproduction recipe are available</td>
+              </tr>
+              <tr>
+                <th scope="row">D03 · Browser behavior</th>
+                <td>Verified with real Chrome</td>
+                <td>Two captures show a deliberate DOM change</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            The complete measurements, environment and run boundaries are in
+            <a
+              href="https://github.com/morluto/rea/blob/main/website/evidence/reproducible-demos.md"
+              >the evidence record</a
+            >.
+          </p>
+        </section>
+
+        <section class="article-section" id="d01">
+          <h2>D01 · Trace an Electron CSV export</h2>
+          <p>
+            Which files handle the Notes app’s Export notes action, and how does
+            the renderer reach the CSV writer? The checked-in six-file fixture
+            is a static analysis target; it does not require Electron to launch.
+          </p>
+          <p>
+            Run the pinned npm package from a working directory outside the
+            repository checkout. Replace <code>/absolute/path/to/rea</code> with
+            the checkout's absolute path; output JSON files are written to the
+            current directory. This avoids <code>npx</code> resolving a checkout
+            with the same package name and version:
+          </p>
+          <pre><code>npx -y rea-agents@6.4.0 analyze-javascript-application /absolute/path/to/rea/website/public/examples/notes-electron --json &gt; application-evidence.json
+node --input-type=module -e '
+import { readFileSync, writeFileSync } from "node:fs";
+const application = JSON.parse(readFileSync("application-evidence.json", "utf8"));
+writeFileSync("feature-trace.json", JSON.stringify({
+  application,
+  seed: { kind: "string", value: "notes:export" },
+  direction: "both"
+}));'
+node --input-type=module -e '
+import { readFileSync, writeFileSync } from "node:fs";
+const application = JSON.parse(readFileSync("application-evidence.json", "utf8"));
+writeFileSync("semantic-trace.json", JSON.stringify({
+  application,
+  query: { seed: { kind: "property", name: "invoke" }, direction: "forward-influence" }
+}));'
+npx -y rea-agents@6.4.0 trace-application-feature ./feature-trace.json --json
+npx -y rea-agents@6.4.0 trace-javascript-semantics ./semantic-trace.json --json</code></pre>
+          <p>
+            To run the checkout's source instead, work from its root after
+            <code>npm ci</code> and <code>npm run build</code>, and use
+            <code>node scripts/rea.mjs</code> in place of each pinned
+            <code>npx</code> command.
+          </p>
+          <p>
+            The trace connects the renderer, preload bridge, literal
+            <code>notes:export</code> channel and main-process handler. On the
+            recorded run, the application graph contained 29 nodes and 42 edges;
+            the feature trace covered all 29 nodes and 42 edges. A semantic
+            query seeded by the <code>invoke</code> property was ambiguous, with
+            one relevant unknown and partial coverage. A literal semantic query
+            for <code>notes:export</code> found no seed; the exact IPC channel
+            comes from the application graph. The source-backed path is
+            <code>renderer.js</code> to <code>preload.js</code> to
+            <code>main.js</code> and <code>csv.js</code>: the renderer calls
+            <code>window.notes.exportCsv()</code>, the preload invokes
+            <code>notes:export</code>, and the main handler writes
+            <code>notes.csv</code> under Electron's Downloads path. The CSV
+            writer emits the <code>id,title</code> header and note rows; the
+            handler returns the destination for the renderer's status message.
+            Static analysis does not establish that a click or file write
+            occurred, or resolve the actual Downloads path.
+          </p>
+          <p>
+            The recorded source-checkout run also required the package-matched
+            Windows native artifact. The Windows build lane uses Linux and
+            MinGW-w64; released packages bundle the matching artifact. See the
+            <a
+              href="https://github.com/morluto/rea/blob/main/docs/testing.md#real-toolchain-verification-lanes"
+              >Windows native verification notes</a
+            >
+            before repeating the analysis from a Windows source checkout.
+          </p>
+          <p>
+            The agent evaluation now asks for the analysis, feature trace and
+            semantic query in that order. This host did not produce a usable
+            Codex transcript, so the requested agent interaction remains
+            unverified. No agent answer is presented as a captured result.
+            Compare the static findings with the
+            <a href="../guides/javascript/">JavaScript and Electron guide</a>.
+          </p>
+        </section>
+
+        <section class="article-section" id="d02">
+          <h2>D02 · Find a native function</h2>
+          <p>
+            Which function prints <code>REA_C_ENTRY</code>, and which calls lead
+            from it to the leaf calculation? The source-owned C fixture is
+            <a
+              href="https://github.com/morluto/rea/blob/main/tests/conformance/c/fixture.c"
+              ><code>tests/conformance/c/fixture.c</code></a
+            >. Its <code>rea_entry</code> function calls
+            <code>rea_branch</code>, which calls <code>rea_leaf</code>.
+          </p>
+          <p>
+            Fixture generation is supported on macOS and Linux with a C
+            toolchain. It writes ignored files under
+            <code>build/conformance/</code> and verifies their source and binary
+            hashes:
+          </p>
+          <pre><code>npm run build:fixtures
+npm run verify:fixtures</code></pre>
+          <p>
+            With Ghidra configured, the equivalent CLI investigation uses the
+            same target and provider for each standalone command:
+          </p>
+          <pre><code>node scripts/rea.mjs search build/conformance/c "REA_C_ENTRY" --provider ghidra --json
+node scripts/rea.mjs function build/conformance/c rea_entry --provider ghidra --json
+node scripts/rea.mjs function build/conformance/c rea_branch --provider ghidra --json
+node scripts/rea.mjs xrefs build/conformance/c rea_entry --provider ghidra --json</code></pre>
+          <p>
+            The <code>rea_branch</code> query shows the next call to
+            <code>rea_leaf</code>. CLI <code>xrefs</code> accepts a symbol name
+            and resolves it to an address; the MCP operation takes an address
+            (Ghidra requires it explicitly). In MCP, open the binary, search for
+            the marker and procedures, inspect <code>rea_entry</code> and
+            <code>rea_branch</code>, pass the resolved address to
+            <code>xrefs</code>, then call <code>close_binary</code>. The MCP
+            lifecycle must report successful cleanup. The CLI commands use
+            separate processes and release their own analysis resources when
+            each command exits.
+          </p>
+          <p>
+            This Windows host has no configured Ghidra, IDA or Hopper provider,
+            so no pseudocode, assembly or reference result is claimed. The
+            provider run remains blocked until one of those bring-your-own
+            engines is available. See the
+            <a
+              href="https://github.com/morluto/rea/blob/main/docs/installation.md#hopper"
+              >provider setup guide</a
+            >
+            and
+            <a
+              href="https://github.com/morluto/rea/blob/main/docs/cli.md#native-analysis"
+              >native CLI guide</a
+            >.
+          </p>
+        </section>
+
+        <section class="article-section" id="d03">
+          <h2>D03 · Compare a browser action</h2>
+          <p>
+            What changes after clicking Export notes? The real-browser verifier
+            starts its source-owned loopback page in Chrome, clicks the button,
+            waits for an explicit ready state and captures the DOM. It repeats
+            the same steps for a changed variant, then compares the two captures
+            with the public CLI.
+          </p>
+          <p>
+            From the repository root, install the pinned dependencies with
+            <code>npm ci</code>. Linux and macOS use the verifier’s standard
+            Chrome paths. On Windows, set <code>REA_BROWSER_EXECUTABLE</code>
+            to the installed Chrome executable before running the command:
+          </p>
+          <pre><code>$env:REA_BROWSER_EXECUTABLE = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+npm run verify:browser</code></pre>
+          <p>
+            The baseline displays <code>Exported 2 notes</code>; the changed
+            variant displays <code>Exported 3 notes</code>. The captures align
+            by their step IDs, the comparison reports <code>changed</code>, and
+            the result step contains one changed DOM artifact. This shows a
+            controlled fixture difference, not behavior from an external site.
+          </p>
+          <p>
+            The verified run used Chrome 154. REA terminated the browser
+            processes it launched, removed their temporary profiles, closed the
+            loopback fixture and removed the temporary comparison inputs. The
+            source and verifier are in
+            <a
+              href="https://github.com/morluto/rea/blob/main/scripts/verify-real-browser.mjs"
+              ><code>scripts/verify-real-browser.mjs</code></a
+            >. The browser guide explains the MCP capture contract and its
+            <a href="../guides/browser/">worked example</a>.
+          </p>
+        </section>
+
+        <section class="article-section" id="limits">
+          <h2>What remains</h2>
+          <ul>
+            <li>
+              Capture a real D01 agent transcript with a working local Codex
+              login, and retain the full Evidence references used in its answer.
+            </li>
+            <li>
+              Run D02 on a declared host with a configured BYO provider; record
+              the actual function result, source references and cleanup outcome.
+            </li>
+            <li>
+              Record the walkthroughs and test the published instructions from a
+              clean user setup.
+            </li>
+            <li>
+              Measure time to first result, full scenario duration, process-tree
+              CPU/RSS and temporary disk use before making resource claims.
+              Those measurements are currently unknown.
+            </li>
+          </ul>
+          <p>
+            These missing runs keep the issue open. The
+            <a href="https://github.com/morluto/rea/issues/778"
+              >tracking issue</a
+            >
+            remains the place to link later transcripts, provider results and
+            recordings.
+          </p>
+        </section>
+      </article>
+    </main>
+    <!-- website:footer:start -->
+    <!-- prettier-ignore -->
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <p>REA · Reverse Engineer Anything</p>
+        <div class="footer-links">
+          <a href="https://github.com/morluto/rea">Source</a
+          ><a href="https://github.com/morluto/rea/blob/main/LICENSE">MIT license</a
+          ><a href="https://discord.gg/GkcryMnJDM">Join the community</a
+          ><a href="https://x.com/reatools">Follow us on X</a>
+        </div>
+      </div>
+    </footer>
+    <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
+    <a class="back-to-top" href="#top" aria-label="Back to top">
+      <span aria-hidden="true">↑</span> Top
+    </a>
+    <!-- website:footer:end -->
+  </body>
+</html>

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readdir } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
@@ -145,6 +146,37 @@ export async function runScenarioCli(scenario) {
     },
   );
   return JSON.parse(stdout);
+}
+
+/** Compare two real scenario captures through the public CLI and remove its inputs. */
+export async function runScenarioComparisonCli(before, after) {
+  const root = await mkdtemp(join(tmpdir(), "rea-scenario-comparison-"));
+  const beforePath = join(root, "before.json");
+  const afterPath = join(root, "after.json");
+  try {
+    await Promise.all([
+      writeFile(beforePath, JSON.stringify(before.normalized_result)),
+      writeFile(afterPath, JSON.stringify(after.normalized_result)),
+    ]);
+    const { stdout } = await execute(
+      process.execPath,
+      [
+        "scripts/rea.mjs",
+        "compare-web-captures",
+        beforePath,
+        afterPath,
+        "--json",
+      ],
+      {
+        cwd: process.cwd(),
+        env: process.env,
+        maxBuffer: 16 * 1_024 * 1_024,
+      },
+    );
+    return JSON.parse(stdout);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 /** Verify failed real navigation retains observations through both public adapters. */

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import {
   chmod,
+  cp,
   copyFile,
   mkdir,
   mkdtemp,
@@ -153,6 +154,27 @@ try {
       requiresEvidence: true,
       requiredAnswerTermGroups: [["profileapi"], ["profile:read"]],
       prompt: `請靜態分析已交付的 Electron 程式 ${targets.javascript}，說明 renderer 如何透過 preload 讀取 profile，以及 main handler 的關係。不要執行目標或安裝分析引擎；引用完整的產出 Evidence，保留 runtime 未知事項。`,
+    },
+    {
+      id: "notes-export",
+      expectedFirstTool: "analyze_javascript_application",
+      requiresEvidence: true,
+      requiredToolSubsequence: [
+        "analyze_javascript_application",
+        "trace_application_feature",
+        "trace_javascript_semantics",
+      ],
+      requiredAnswerTermGroups: [
+        ["notes:export"],
+        ["renderer.js"],
+        ["preload.js"],
+        ["main.js"],
+        ["csv.js"],
+        ["notes.csv"],
+        ["id,title"],
+        ["runtime", "not executed", "not observed"],
+      ],
+      prompt: `Use REA on the shipped Electron application at ${targets.notesElectron} to explain what the Export notes button does. Do not read target files directly or launch Electron. Analyze the app, use that returned Evidence to trace the exact notes:export IPC channel in both directions, then query semantic relations for the property invoke with forward influence. Explain the renderer, preload, main handler, CSV columns and row construction with source locations. State that the semantic query is ambiguous with one relevant unknown, and that static analysis does not observe a click or resolve the actual Downloads directory returned by Electron at runtime.`,
     },
     {
       id: "javascript-module-view",
@@ -387,9 +409,15 @@ try {
 
 async function createTargets(root, includeManaged) {
   const fixtures = await createAgentEvaluationFixtures(root, repositoryRoot);
+  const notesElectron = join(root, "notes-electron");
   const largeJavascript = join(root, "large-app");
   await mkdir(join(largeJavascript, "lib"), { recursive: true });
   await Promise.all([
+    cp(
+      join(repositoryRoot, "website/public/examples/notes-electron"),
+      notesElectron,
+      { recursive: true },
+    ),
     writeFile(
       join(largeJavascript, "package.json"),
       '{"name":"large-app","main":"main.js"}\n',
@@ -438,6 +466,7 @@ async function createTargets(root, includeManaged) {
   return {
     native: "/bin/true",
     ...fixtures,
+    notesElectron,
     largeJavascript,
     managed: join(managedOutput, "AgentEval.dll"),
   };
