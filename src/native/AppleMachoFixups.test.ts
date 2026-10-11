@@ -127,6 +127,9 @@ const chainedData = (format: 1 | 2 | 3): Buffer => {
   starts.writeUInt32LE(24, 12);
   starts.writeUInt16LE(0x4000, 16);
   starts.writeUInt16LE(6, 18);
+  starts.writeBigUInt64LE(0x4000n, 20);
+  starts.writeUInt16LE(1, 32);
+  starts.writeUInt16LE(8, 34);
   const header = Buffer.alloc(28);
   header.writeUInt32LE(0, 0);
   header.writeUInt32LE(28, 4);
@@ -135,7 +138,10 @@ const chainedData = (format: 1 | 2 | 3): Buffer => {
   header.writeUInt32LE(2, 16);
   header.writeUInt32LE(format, 20);
   header.writeUInt32LE(0, 24);
-  return Buffer.concat([header, starts, imports, symbols]);
+  const data = Buffer.alloc(0x8000);
+  Buffer.concat([header, starts, imports, symbols]).copy(data);
+  data.writeBigUInt64LE(1n | field(1n, 63), 0x4008);
+  return data;
 };
 
 const SEGMENTS: Segment[] = [
@@ -182,22 +188,31 @@ describe("pointer fixup tables", () => {
 
   it("does not decode unreferenced imports while constructing fixup facts", () => {
     const data = chainedData(1);
-    // The second import is outside the table bytes; only the first is needed
-    // to construct the fixup reader, so its malformed symbol remains lazy.
-    data.writeUInt32LE(0xffff_ff00, 72);
-    expect(() =>
-      parsePointerFixups(
-        data,
-        {
-          chained: { offset: 0, size: data.length },
-          binds: [],
-          rebases: [],
-          dylibs: [],
-        },
-        SEGMENTS,
-        BASE,
-      ),
-    ).not.toThrow();
+    // The second import's name leaves the pool. Preserve the first import
+    // and defer that distinct failure until its pointer is examined.
+    data.writeUInt32LE(0xffff_ff00, data.readUInt32LE(8) + 4);
+    const fixups = parsePointerFixups(
+      data,
+      {
+        chained: { offset: 0, size: 128 },
+        binds: [],
+        rebases: [],
+        dylibs: [],
+      },
+      SEGMENTS,
+      BASE,
+    );
+    expect(fixups.decode(BASE + 0x4008n, field(1n, 63))).toMatchObject({
+      kind: "bind",
+      symbol: "_OBJC_CLASS_$_NSObject",
+    });
+    expect(fixups.issues).toEqual([]);
+    expect(fixups.decode(BASE + 0x4008n, 1n | field(1n, 63))).toMatchObject({
+      kind: "unsupported",
+    });
+    expect(fixups.issues).toMatchObject([
+      { code: "chained_pointer_decode_failed" },
+    ]);
   });
 
   for (const format of [1, 2, 3] as const)
@@ -231,7 +246,222 @@ describe("pointer fixup tables", () => {
         target: 0x1234n,
       });
     });
+});
+describe("chained pointer membership", () => {
+  it("retains a valid later page after an earlier chain fails", () => {
+    const data = chainedData(1);
+    data.copyWithin(66, 64, 128);
+    data.writeUInt32LE(66, 8);
+    data.writeUInt32LE(74, 12);
+    data.writeUInt32LE(26, 40);
+    data.writeUInt16LE(0x1000, 44);
+    data.writeUInt16LE(2, 60);
+    data.writeUInt16LE(8, 64);
+    data.writeBigUInt64LE(field(0xfffn, 51), 0x4008);
+    data.writeBigUInt64LE(0x1234n, 0x5008);
+    const fixups = parsePointerFixups(
+      data,
+      {
+        chained: { offset: 0, size: 160 },
+        binds: [],
+        rebases: [],
+        dylibs: [],
+      },
+      SEGMENTS,
+      BASE,
+    );
+    expect(fixups.issues).toMatchObject([
+      { code: "chained_pointer_walk_failed" },
+    ]);
+    expect(fixups.decode(BASE + 0x5008n, data.readBigUInt64LE(0x5008))).toEqual(
+      { kind: "rebase", target: BASE + 0x1234n },
+    );
+  });
+  it.each([2, 6, 1, 9, 12])(
+    "decodes only chain members for pointer format %i",
+    (pointerFormat) => {
+      const data = chainedData(1);
+      data.writeUInt16LE(pointerFormat, 46);
+      const generic = pointerFormat === 2 || pointerFormat === 6;
+      const bindBit = generic ? 63 : 62;
+      data.writeBigUInt64LE(field(4n, 51) | field(1n, bindBit), 0x4008);
+      const second = generic ? 0x4018 : 0x4028;
+      data.writeBigUInt64LE(1n | field(1n, bindBit), second);
+      const plain = BASE + 0x1234n;
+      data.writeBigUInt64LE(plain, 0x4010);
+      const fixups = parsePointerFixups(
+        data,
+        {
+          chained: { offset: 0, size: 128 },
+          binds: [],
+          rebases: [],
+          dylibs: [],
+        },
+        SEGMENTS,
+        BASE,
+      );
+      expect(fixups.issues).toEqual([]);
+      expect(
+        fixups.decode(BASE + 0x4008n, data.readBigUInt64LE(0x4008)),
+      ).toMatchObject({
+        kind: "bind",
+        symbol: "_OBJC_CLASS_$_NSObject",
+      });
+      expect(
+        fixups.decode(BASE + BigInt(second), data.readBigUInt64LE(second)),
+      ).toMatchObject({
+        kind: "bind",
+        symbol: "_free",
+      });
+      expect(fixups.decode(BASE + 0x4010n, plain)).toEqual({
+        kind: "rebase",
+        target: plain,
+      });
+      expect(fixups.decode(BASE + 0x4030n, 0n)).toEqual({
+        kind: "rebase",
+        target: 0n,
+      });
+    },
+  );
 
+  it("keeps NONE pages and pages absent from the table plain, and decodes a chained zero", () => {
+    const data = chainedData(1);
+    data.writeBigUInt64LE(0n, 0x4008);
+    const commands = {
+      chained: { offset: 0, size: 128 },
+      binds: [],
+      rebases: [],
+      dylibs: [],
+    } as const;
+    const fixups = parsePointerFixups(data, commands, SEGMENTS, BASE);
+    expect(fixups.decode(BASE + 0x4008n, 0n)).toEqual({
+      kind: "rebase",
+      target: BASE,
+    });
+    data.writeUInt16LE(0xffff, 62);
+    data.writeUInt16LE(99, 46);
+    data.writeUInt16LE(0x1000, 44);
+    const unknown = parsePointerFixups(data, commands, SEGMENTS, BASE);
+    expect(unknown.decode(BASE + 0x4008n, BASE + 8n)).toEqual({
+      kind: "rebase",
+      target: BASE + 8n,
+    });
+    expect(unknown.decode(BASE + 0x5008n, BASE + 16n)).toEqual({
+      kind: "rebase",
+      target: BASE + 16n,
+    });
+  });
+});
+describe("malformed chained pointer coverage", () => {
+  it.each(["link", "multi"])(
+    "reports malformed %s chains without claiming complete fixups",
+    (malformed) => {
+      const data = chainedData(1);
+      if (malformed === "link")
+        data.writeBigUInt64LE(field(0xfffn, 51), 0x4008);
+      else data.writeUInt16LE(0x8000, 62);
+      const fixups = parsePointerFixups(
+        data,
+        {
+          chained: { offset: 0, size: 128 },
+          binds: [],
+          rebases: [],
+          dylibs: [],
+        },
+        SEGMENTS,
+        BASE,
+      );
+      expect(fixups.issues).toMatchObject([
+        { code: "chained_pointer_walk_failed" },
+      ]);
+      if (malformed === "link")
+        expect(
+          fixups.decode(BASE + 0x4008n, data.readBigUInt64LE(0x4008)),
+        ).toEqual({ kind: "rebase", target: BASE });
+      expect(fixups.decode(BASE + 0x4010n, 0n)).toMatchObject({
+        kind: "unsupported",
+      });
+    },
+  );
+
+  it.each([
+    [0, 1, "header version"],
+    [4, 126, "starts table"],
+    [8, 63, "starts table"],
+    [40, 22, "page starts"],
+    [48, 0x1000, "segment offset"],
+  ] as const)(
+    "rejects malformed chained structure at byte %i",
+    (at, value, message) => {
+      const data = chainedData(1);
+      data.writeUInt32LE(value, at);
+      expect(() =>
+        parsePointerFixups(
+          data,
+          {
+            chained: { offset: 0, size: 128 },
+            binds: [],
+            rebases: [],
+            dylibs: [],
+          },
+          SEGMENTS,
+          BASE,
+        ),
+      ).toThrow(message);
+    },
+  );
+});
+describe("chained import library identity", () => {
+  it.each([1, 2, 3] as const)(
+    "retains positive and special library ordinals for import format %i",
+    (format) => {
+      const data = chainedData(format);
+      const importAt = data.readUInt32LE(8);
+      const width = format === 3 ? 16 : 8;
+      const maximum = format === 3 ? 0xfff0 : 0xf0;
+      const libraries = Array.from(
+        { length: maximum },
+        (_, index) => `/library-${index + 1}`,
+      );
+      for (const ordinal of [
+        1 << (width - 1),
+        maximum,
+        maximum + 1,
+        (1 << width) - 1,
+      ]) {
+        if (format === 3)
+          data.writeBigUInt64LE(
+            (data.readBigUInt64LE(importAt) & ~0xffffn) | BigInt(ordinal),
+            importAt,
+          );
+        else
+          data.writeUInt32LE(
+            (data.readUInt32LE(importAt) & ~0xff) | ordinal,
+            importAt,
+          );
+        data.writeBigUInt64LE(field(1n, 63), 0x4008);
+        const fixups = parsePointerFixups(
+          data,
+          {
+            chained: { offset: 0, size: 160 },
+            binds: [],
+            rebases: [],
+            dylibs: libraries,
+          },
+          SEGMENTS,
+          BASE,
+        );
+        expect(
+          fixups.decode(BASE + 0x4008n, data.readBigUInt64LE(0x4008)),
+        ).toMatchObject({
+          kind: "bind",
+          library: ordinal <= maximum ? libraries[ordinal - 1] : null,
+        });
+      }
+    },
+  );
+});
+describe("legacy pointer fixup streams", () => {
   it("interprets legacy bind, weak-bind and lazy-bind opcodes", () => {
     const opcodes = Buffer.from([
       0x11, // SET_DYLIB_ORDINAL_IMM 1
