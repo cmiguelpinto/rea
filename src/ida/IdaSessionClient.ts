@@ -29,8 +29,6 @@ import {
   type IdaOperation,
 } from "./IdaProviderCapabilities.js";
 import {
-  closeDatabaseSchema,
-  databaseListSchema,
   legacyMetadataSchema,
   modernHealthSchema,
   openDatabaseSchema,
@@ -41,6 +39,10 @@ import {
   sameIdaHostPath,
 } from "./IdaWorkspace.js";
 import { parseIdaInput } from "./IdaInput.js";
+import {
+  closeVerifiedIdaWorker,
+  readIdaSessionInventory,
+} from "./IdaWorkerRelease.js";
 
 const legacyTools = [
   "get_metadata",
@@ -101,6 +103,7 @@ export class IdaSessionClient implements AnalysisClient {
   #workspace: IdaWorkspace | undefined;
   #database: string | undefined;
   #databaseCloseAcknowledged = false;
+  #releaseId: string | undefined;
   #openAttempted = false;
   #openCompleted = false;
   #initialIdentity: string | undefined;
@@ -325,8 +328,16 @@ export class IdaSessionClient implements AnalysisClient {
         throw new AnalysisProtocolError(
           "IDA returned an adopted or unexpected session instead of the requested private worker.",
         );
-      const inventory = databaseListSchema.parse(
-        await this.connection.call("idb_list", {}),
+      // Only the original idb_open reply can bind this per-worker generation.
+      // An idb_list entry or an error string must never supply release_id.
+      this.#releaseId = opened.session.release_id;
+      // A confirmed open-generation token keeps the exact owned database bound
+      // even if the first inventory read fails or the supervisor reaps it.
+      if (this.#releaseId !== undefined)
+        this.#database = opened.session.session_id;
+      const inventory = await readIdaSessionInventory(
+        this.connection,
+        this.#releaseId,
       );
       this.#lifecycle.push(jsonValueSchema.parse(inventory));
       const entry = inventory.sessions.find(
@@ -418,8 +429,9 @@ export class IdaSessionClient implements AnalysisClient {
     try {
       if (this.#workspace !== undefined && this.#openAttempted) {
         if (this.#database === undefined) {
-          const inventory = databaseListSchema.parse(
-            await this.connection.call("idb_list", {}),
+          const inventory = await readIdaSessionInventory(
+            this.connection,
+            this.#releaseId,
           );
           const workspace = this.#workspace;
           this.#database = inventory.sessions.find(
@@ -438,28 +450,27 @@ export class IdaSessionClient implements AnalysisClient {
             throw new AnalysisProtocolError(
               "An unowned worker still uses the private workspace; it was retained.",
             );
+          if (this.#database === undefined)
+            throw new AnalysisProtocolError(
+              "IDA worker release could not be verified; an empty session inventory does not prove a private worker has exited.",
+            );
         }
         if (this.#database !== undefined) {
           if (!this.#databaseCloseAcknowledged) {
-            const closed = closeDatabaseSchema.parse(
-              await this.connection.call("idb_close", {
-                database: this.#database,
-                save: false,
-              }),
-            );
-            if (
-              closed.session_id !== this.#database ||
-              closed.saved === true ||
-              closed.owned !== true ||
-              closed.backend !== "worker"
-            )
-              throw new AnalysisProtocolError(
-                "IDA database close did not confirm the requested owned, unsaved session release.",
-              );
+            await closeVerifiedIdaWorker({
+              connection: this.connection,
+              database: this.#database,
+              privateSessionId: this.#workspace.sessionId,
+              inputPath: this.#workspace.inputPath,
+              sha256: this.target.sha256,
+              openCompleted: this.#openCompleted,
+              releaseId: this.#releaseId,
+            });
             this.#databaseCloseAcknowledged = true;
           }
-          const inventory = databaseListSchema.parse(
-            await this.connection.call("idb_list", {}),
+          const inventory = await readIdaSessionInventory(
+            this.connection,
+            this.#releaseId,
           );
           if (
             inventory.sessions.some(

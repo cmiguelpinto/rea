@@ -219,21 +219,26 @@ export class RecordingIdaMcp implements IdaMcpConnection {
           session: { session_id: this.database, input_path: this.inputPath },
         };
       }
-      case "idb_list":
+      case "idb_list": {
+        const sessions =
+          this.database === undefined
+            ? []
+            : [
+                {
+                  session_id: this.database,
+                  input_path: this.inputPath,
+                  owned: this.owned,
+                  backend: "worker",
+                  is_active: this.active,
+                },
+              ];
         return {
-          sessions:
-            this.database === undefined
-              ? []
-              : [
-                  {
-                    session_id: this.database,
-                    input_path: this.inputPath,
-                    owned: this.owned,
-                    backend: "worker",
-                    is_active: this.active,
-                  },
-                ],
+          sessions,
+          ...(args.strict_discovery === true
+            ? { count: sessions.length, registry_scan_complete: true }
+            : {}),
         };
+      }
       case "server_health":
         return {
           status: "ok",
