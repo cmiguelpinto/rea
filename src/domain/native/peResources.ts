@@ -16,7 +16,9 @@ const identity = z.discriminatedUnion("kind", [
 
 /** Complete bounded inspection of a caller-selected PE image, without execution. */
 export const inspectPeResourcesInputSchema = z.strictObject({
-  path: localPathStringSchema.describe("Absolute filesystem path to a PE image"),
+  path: localPathStringSchema.describe(
+    "Absolute filesystem path to a PE image",
+  ),
   max_file_bytes: z
     .number()
     .int()
