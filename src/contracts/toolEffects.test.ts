@@ -24,6 +24,9 @@ const EXECUTION_WORDING_EXCEPTIONS: Readonly<Record<string, string>> = {
     "decodes bytecode in REA's bundled worker without executing it",
   inspect_wasm_artifact:
     "WABT validates and decompiles the module without executing it",
+  identify_flutter_build:
+    "identifies the build through execution-free APK parsing",
+  inspect_dart_aot: "inspects snapshot bytes without executing them",
   inspect_managed_artifact: "reads metadata without executing target code",
   inspect_managed_members: "reads metadata without executing target code",
   inspect_managed_native_boundaries:
