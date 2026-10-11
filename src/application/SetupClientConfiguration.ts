@@ -8,6 +8,7 @@ import {
   legacyClientServerPath,
   OMP_DISABLED_SERVERS_KEY,
   parseClientConfiguration,
+  retainClientRegistrationFields,
   serializeClientConfiguration,
   withClientServers,
   type ClientConfigurationDocument,
@@ -422,12 +423,19 @@ const clientConfigurationDesired = (
     command.length === 0 ? [PRODUCT_IDENTITY.cliBinary, "mcp"] : command,
     environment.value,
   );
-  return {
-    ...registration,
-    ...(client.name === "codex" || client.name === "grok_build"
-      ? {
-          startup_timeout_sec: MCP_STARTUP_POLICY.codexStartupTimeoutSeconds,
-        }
-      : {}),
-  };
+  // Keep fields the user added to REA's own entry, such as OMP `timeout`. A
+  // legacy OpenCode V1 entry migrating into a V2 table keeps only its
+  // environment, because its other fields belong to the V1 shape.
+  return retainClientRegistrationFields(
+    format,
+    parsed?.servers[PRODUCT_IDENTITY.mcpServerKey],
+    {
+      ...registration,
+      ...(client.name === "codex" || client.name === "grok_build"
+        ? {
+            startup_timeout_sec: MCP_STARTUP_POLICY.codexStartupTimeoutSeconds,
+          }
+        : {}),
+    },
+  );
 };

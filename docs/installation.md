@@ -383,6 +383,15 @@ uninstall retain an existing `.rea.backup` rather than replacing the first snaps
 Setup also retains valid environment overrides in REA's existing server entry,
 such as `REA_MCP_INPUT_SCHEMA_PROFILE` and `REA_MCP_MAX_RESPONSE_BYTES`.
 Detected provider settings replace only matching environment keys.
+Other fields you added to that entry, such as OMP's `timeout` or Codex's
+`tool_timeout_sec`, are kept. Setup rewrites only the launch keys (`command`,
+`args`, `type` or `transport`, and the environment map) and REA's
+client-specific keys. It removes remote-server keys such as `url` and `headers`
+that contradict the local command, and an entry-level `enabled: false` or
+(outside Grok Build) `disabled: true`, so the registration is active. An
+existing entry without a `command` is a remote server and is replaced whole. A
+legacy OpenCode entry moved into the native `mcp.servers` table keeps only its
+environment.
 Setup and doctor report a malformed REA environment map or invalid runtime
 setting before setup writes files. Repair the named setting in the client
 configuration; setup does not silently discard the rest of the map.

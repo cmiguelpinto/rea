@@ -1416,6 +1416,74 @@ export const clientRegistrationEntry = (
   }
 };
 
+/**
+ * Launcher and transport keys REA owns in its entry. A key absent from REA's
+ * new entry is removed, so a stale `type: "http"` cannot outlive the stdio
+ * registration and an emptied environment map is not left behind.
+ */
+const REGISTRATION_LAUNCHER_KEYS: Readonly<Record<string, true>> = {
+  command: true,
+  args: true,
+  env: true,
+  environment: true,
+  type: true,
+  transport: true,
+};
+
+/** Remote-server keys that contradict the local command entry REA writes. */
+const REGISTRATION_REMOTE_KEYS: Readonly<Record<string, true>> = {
+  url: true,
+  httpUrl: true,
+  serverUrl: true,
+  headers: true,
+  http_headers: true,
+  env_http_headers: true,
+  bearer_token_env_var: true,
+  oauth: true,
+};
+
+/**
+ * Whether setup replaces or removes an existing entry key. Setup registers an
+ * active server, so entry-level switches that turn it off are removed too.
+ * Grok Build's entry `disabled` is kept, matching registration status, which
+ * reads only Grok's root `disabled_mcp_servers` list.
+ */
+const registrationManagedKey = (
+  dialect: ClientRegistrationDialect,
+  key: string,
+  value: unknown,
+): boolean =>
+  Object.hasOwn(REGISTRATION_LAUNCHER_KEYS, key) ||
+  Object.hasOwn(REGISTRATION_REMOTE_KEYS, key) ||
+  (key === "enabled" && value === false) ||
+  (key === "disabled" && value === true && dialect !== "grok");
+
+/**
+ * Apply REA's new entry over an existing local command entry. REA's keys take
+ * their new values in place, and every other key the user added (for example
+ * OMP `timeout` or Codex `tool_timeout_sec`) is kept. An existing entry without
+ * a `command` is a remote server, which REA replaces whole.
+ */
+export const retainClientRegistrationFields = (
+  dialect: ClientRegistrationDialect,
+  existing: unknown,
+  registration: Readonly<Record<string, unknown>>,
+): Record<string, unknown> => {
+  const current = objectSchema.safeParse(existing);
+  if (!current.success || !Object.hasOwn(current.data, "command"))
+    return { ...registration };
+  const retained = Object.fromEntries(
+    Object.entries(current.data).flatMap(([key, value]): [string, unknown][] =>
+      Object.hasOwn(registration, key)
+        ? [[key, registration[key]]]
+        : registrationManagedKey(dialect, key, value)
+          ? []
+          : [[key, value]],
+    ),
+  );
+  return { ...retained, ...registration };
+};
+
 /** Parse one Gemini policy at its source boundary before consolidating scopes. */
 export const parseGeminiMcpPolicy = (parsed: ClientConfigurationDocument) =>
   z
